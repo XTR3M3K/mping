@@ -1,0 +1,17 @@
+# Keep the Docker build context small and avoid copying host artifacts
+# (macOS-native node_modules, DB data) into Linux images.
+**/node_modules
+**/dist
+pgdata
+.git
+.github
+.claude
+*.log
+.env
+.env.local
+.DS_Store
+coverage
+*.tsbuildinfo
+.vite
+README.md
+**/README.md

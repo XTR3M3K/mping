@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-base text-gray-100 font-sans antialiased;
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 92, 255, 0.12), transparent);
+    background-attachment: fixed;
+  }
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-3 rounded-full;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface/80 backdrop-blur-sm border border-border/70 rounded-2xl shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium
+           transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-accent hover:bg-accent-soft text-white shadow-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-surface-2 hover:bg-surface-3 text-gray-200 border border-border;
+  }
+  .btn-danger {
+    @apply btn bg-bad/15 hover:bg-bad/25 text-bad border border-bad/30;
+  }
+  .input {
+    @apply bg-surface-2 border border-border rounded-xl px-3 py-2 text-sm text-gray-100
+           placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50
+           transition w-full;
+  }
+  .label {
+    @apply text-xs font-medium text-muted uppercase tracking-wide;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+}

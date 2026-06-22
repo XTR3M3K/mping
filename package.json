@@ -1,0 +1,20 @@
+{
+  "name": "mping",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Smokeping-style multi-collector latency monitor with Discord alerts and traceroute history",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --parallel --filter @mping/server --filter @mping/web dev",
+    "dev:server": "pnpm --filter @mping/server dev",
+    "dev:web": "pnpm --filter @mping/web dev",
+    "dev:agent": "pnpm --filter @mping/agent dev",
+    "migrate": "pnpm --filter @mping/server migrate",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.7.0"
+}

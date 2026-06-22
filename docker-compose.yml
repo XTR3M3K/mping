@@ -1,0 +1,61 @@
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: mping
+      POSTGRES_PASSWORD: mping
+      POSTGRES_DB: mping
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://mping:mping@db:5432/mping
+      PORT: "4420"
+      HOST: 0.0.0.0
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4420}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-please-to-a-long-random-string-0123456789}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      # Auto-create a collector named like the bundled agent so the stack works
+      # out of the box. Override the token in production.
+      BOOTSTRAP_COLLECTOR_NAME: ${COLLECTOR_NAME:-local}
+      BOOTSTRAP_COLLECTOR_TOKEN: ${COLLECTOR_TOKEN:-local-bootstrap-token-change-me}
+    ports:
+      - "4420:4420"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4420/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Bundled local collector. Add more agents (on other machines) by creating a
+  # collector in the UI and running packages/agent there — see its README.
+  agent:
+    build:
+      context: .
+      dockerfile: packages/agent/Dockerfile
+    depends_on:
+      server:
+        condition: service_healthy
+    cap_add:
+      - NET_RAW # for mtr / raw-socket traceroute
+    environment:
+      MPING_SERVER: http://server:4420
+      MPING_NAME: ${COLLECTOR_NAME:-local}
+      MPING_TOKEN: ${COLLECTOR_TOKEN:-local-bootstrap-token-change-me}
+    restart: unless-stopped
