@@ -2,7 +2,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { LoginSchema } from "@mping/shared";
 import { verifyPassword } from "../crypto.js";
 import { getPasswordHash, setPassword } from "../settings.js";
-import { env } from "../env.js";
 
 // Auth state is a single signed cookie (HMAC integrity via SESSION_SECRET).
 // No secret payload is stored, so signing — not encryption — is sufficient,
@@ -12,7 +11,10 @@ const COOKIE_OPTS = {
   path: "/",
   httpOnly: true,
   sameSite: "lax" as const,
-  secure: env.isProd,
+  // "auto" = mark Secure only when the request is actually HTTPS (honours
+  // X-Forwarded-Proto via trustProxy). Avoids dropping the cookie when the
+  // app is served over plain HTTP behind a proxy.
+  secure: "auto" as const,
   maxAge: 60 * 60 * 24 * 30,
 };
 

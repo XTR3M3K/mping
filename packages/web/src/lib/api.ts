@@ -16,9 +16,13 @@ export class ApiError extends Error {
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only declare a JSON content-type when we actually send a body, otherwise
+  // an empty application/json request is rejected by the server parser.
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
+  if (init?.body != null) headers["content-type"] = "application/json";
   const res = await fetch(`/api${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers,
     credentials: "same-origin",
   });
   if (res.status === 204) return undefined as T;

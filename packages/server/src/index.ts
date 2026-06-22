@@ -31,6 +31,19 @@ async function main(): Promise<void> {
     bodyLimit: 2 * 1024 * 1024,
   });
 
+  // Accept empty bodies on application/json requests (e.g. POST /logout),
+  // which Fastify's default parser otherwise rejects with a 400.
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
+    const text = body as string;
+    if (!text || text.length === 0) return done(null, undefined);
+    try {
+      done(null, JSON.parse(text));
+    } catch (err) {
+      (err as Error & { statusCode?: number }).statusCode = 400;
+      done(err as Error, undefined);
+    }
+  });
+
   // Cookie plugin with a signing secret (used for the signed auth cookie).
   await app.register(cookie, { secret: env.sessionSecret });
   await app.register(websocket);
