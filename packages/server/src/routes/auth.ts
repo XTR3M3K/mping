@@ -2,13 +2,41 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { LoginSchema } from "@mping/shared";
 import { verifyPassword } from "../crypto.js";
 import { getPasswordHash, setPassword } from "../settings.js";
+import { env } from "../env.js";
+
+// Auth state is a single signed cookie (HMAC integrity via SESSION_SECRET).
+// No secret payload is stored, so signing — not encryption — is sufficient,
+// which lets us avoid the native `sodium-native` dependency entirely.
+const AUTH_COOKIE = "mping_auth";
+const COOKIE_OPTS = {
+  path: "/",
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: env.isProd,
+  maxAge: 60 * 60 * 24 * 30,
+};
+
+export function setAuthCookie(reply: FastifyReply): void {
+  reply.setCookie(AUTH_COOKIE, "1", { ...COOKIE_OPTS, signed: true });
+}
+
+export function clearAuthCookie(reply: FastifyReply): void {
+  reply.clearCookie(AUTH_COOKIE, { path: "/" });
+}
+
+export function isAuthed(req: FastifyRequest): boolean {
+  const raw = req.cookies[AUTH_COOKIE];
+  if (!raw) return false;
+  const r = req.unsignCookie(raw);
+  return r.valid && r.value === "1";
+}
 
 /**
  * preHandler guard: rejects unauthenticated UI requests. Must `return reply` so
  * Fastify halts the lifecycle and does NOT run the route handler.
  */
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> {
-  if (req.session.get("authed") !== true) {
+  if (!isAuthed(req)) {
     return reply.code(401).send({ error: "unauthorized" });
   }
 }
@@ -46,17 +74,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: "invalid password" });
     }
     loginFails.delete(req.ip);
-    req.session.set("authed", true);
+    setAuthCookie(reply);
     return { ok: true };
   });
 
-  app.post("/api/auth/logout", async (req) => {
-    req.session.delete();
+  app.post("/api/auth/logout", async (_req, reply) => {
+    clearAuthCookie(reply);
     return { ok: true };
   });
 
   app.get("/api/auth/me", async (req) => {
-    return { authed: req.session.get("authed") === true };
+    return { authed: isAuthed(req) };
   });
 
   app.post("/api/auth/password", { preHandler: requireAuth }, async (req, reply) => {

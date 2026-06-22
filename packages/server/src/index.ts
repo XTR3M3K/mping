@@ -3,14 +3,13 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
-import secureSession from "@fastify/secure-session";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import { env } from "./env.js";
 import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { registerWsClient } from "./ws.js";
-import { authRoutes } from "./routes/auth.js";
+import { authRoutes, isAuthed } from "./routes/auth.js";
 import { agentRoutes } from "./routes/agent.js";
 import { targetRoutes } from "./routes/targets.js";
 import { collectorRoutes } from "./routes/collectors.js";
@@ -32,13 +31,8 @@ async function main(): Promise<void> {
     bodyLimit: 2 * 1024 * 1024,
   });
 
-  await app.register(cookie);
-  await app.register(secureSession, {
-    secret: env.sessionSecret,
-    salt: "mpingSessionSalt", // must be exactly 16 bytes
-    cookieName: "mping_session",
-    cookie: { path: "/", httpOnly: true, sameSite: "lax", secure: env.isProd, maxAge: 60 * 60 * 24 * 30 },
-  });
+  // Cookie plugin with a signing secret (used for the signed auth cookie).
+  await app.register(cookie, { secret: env.sessionSecret });
   await app.register(websocket);
 
   app.get("/healthz", async () => {
@@ -58,7 +52,7 @@ async function main(): Promise<void> {
 
   // Live WebSocket feed (session-cookie auth)
   app.get("/api/ws", { websocket: true }, (socket, req) => {
-    if (req.session.get("authed") !== true) {
+    if (!isAuthed(req)) {
       socket.close(4401, "unauthorized");
       return;
     }
