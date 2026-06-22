@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, TrendingUp, PercentDiamond, GitBranch } from "lucide-react";
@@ -97,7 +97,7 @@ function StatusChip({ event }: { event: AlertEvent }) {
   return event.status === "firing" ? <Chip tone="bad">firing</Chip> : <Chip tone="good">recovered</Chip>;
 }
 
-function meta(e: AlertEvent): { icon: JSX.Element; tone: { bg: string } } {
+function meta(e: AlertEvent): { icon: ReactNode; tone: { bg: string } } {
   if (e.kind === "route_change") return { icon: <GitBranch className="h-5 w-5 text-accent-soft" />, tone: { bg: "bg-accent/15" } };
   if (e.kind === "loss") {
     const firing = e.status === "firing";

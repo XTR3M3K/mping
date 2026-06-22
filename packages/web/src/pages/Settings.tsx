@@ -145,7 +145,7 @@ function CollectorsSection() {
       <SectionTitle>Collectors</SectionTitle>
       <div className="card p-4 space-y-3">
         <div className="flex gap-2">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="hetzner, kat01a, …" onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate()} />
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="location-a, location-b, …" onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate()} />
           <button className="btn-primary shrink-0" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
             <Plus className="h-4 w-4" /> Create
           </button>

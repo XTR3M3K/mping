@@ -8,10 +8,10 @@ server, runs ICMP ping + traceroute locally, and pushes results back over HTTPS.
 ```bash
 MPING_SERVER=https://mping.example.com \
 MPING_TOKEN=<collector-token-from-ui> \
-MPING_NAME=hetzner \
+MPING_NAME=location-a \
 pnpm --filter @mping/agent start
 # or with flags:
-pnpm --filter @mping/agent start -- --server https://mping.example.com --token TOKEN --name hetzner
+pnpm --filter @mping/agent start -- --server https://mping.example.com --token TOKEN --name location-a
 ```
 
 Create the collector + token in the web UI (Settings → Collectors), then start the
@@ -27,10 +27,10 @@ agent with that token. The `--name` must match the collector name you created.
 ## Docker
 
 ```bash
-docker run -d --name mping-hetzner --restart unless-stopped \
+docker run -d --name mping-location-a --restart unless-stopped \
   --cap-add NET_RAW \
   -e MPING_SERVER=https://mping.example.com \
-  -e MPING_TOKEN=... -e MPING_NAME=hetzner \
+  -e MPING_TOKEN=... -e MPING_NAME=location-a \
   ghcr.io/you/mping-agent:latest
 ```
 
@@ -44,7 +44,7 @@ After=network-online.target
 [Service]
 Environment=MPING_SERVER=https://mping.example.com
 Environment=MPING_TOKEN=...
-Environment=MPING_NAME=hetzner
+Environment=MPING_NAME=location-a
 ExecStart=/usr/bin/node --import tsx /opt/mping/packages/agent/src/index.ts
 Restart=always
 RestartSec=5

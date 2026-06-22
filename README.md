@@ -11,7 +11,7 @@ alerts**, and **traceroute change history**.
 - **Smoke charts** — latency distribution drawn as nested percentile bands, with the
   median line coloured by packet loss. Custom retina Canvas renderer.
 - **Multiple collectors** — run lightweight agents on as many boxes as you like
-  (`kat01a`, `hetzner`, …). Each probe's detail page shows **per-collector charts**
+  (`location-a`, `location-b`, …). Each probe's detail page shows **per-collector charts**
   side-by-side (grid) or **overlaid** on one axis.
 - **Discord alerts (ping probes)** — pretty embeds when a probe's **median latency**
   or **packet loss** crosses a per-probe threshold (🔴 firing / 🟢 recovered), with a
@@ -25,12 +25,12 @@ alerts**, and **traceroute change history**.
 ## Architecture
 
 ```
-  agent (ovh) ─┐
-  agent (hetzner)─┼─ HTTPS + token ─►  server (Fastify) ─►  Postgres + TimescaleDB
-  agent (…)      ─┘   push samples       │ alert engine      (hypertables + caggs)
-                      + traceroutes       │ discord webhooks
-                                          ▼
-                              React SPA (served by the server)
+  agent (location-a) ─┐
+  agent (location-b) ─┼─ HTTPS + token ─►  server (Fastify) ─►  Postgres + TimescaleDB
+  agent (…)          ─┘   push samples       │ alert engine      (hypertables + caggs)
+                          + traceroutes       │ discord webhooks
+                                              ▼
+                                  React SPA (served by the server)
 ```
 
 - Agents are **stateless about config**: they pull their target list from the server,
@@ -67,12 +67,12 @@ pnpm dev:web
 Open http://localhost:5173 and log in with `ADMIN_PASSWORD` (default `admin`).
 
 Then:
-1. **Settings → Collectors → Create** a collector (e.g. `kat01a`). Copy its token.
+1. **Settings → Collectors → Create** a collector (e.g. `location-a`). Copy its token.
 2. **Settings → Probes → Add** a probe (e.g. `1.1.1.1`), set a latency threshold.
 3. Run an agent:
 
 ```bash
-pnpm dev:agent -- --server http://localhost:4420 --token <TOKEN> --name kat01a
+pnpm dev:agent -- --server http://localhost:4420 --token <TOKEN> --name location-a
 ```
 
 Charts start filling within a probe cycle. Add more agents with different `--name`
@@ -131,9 +131,11 @@ per-probe thresholds and webhook overrides are set on each probe.
 
 ## Data & retention
 
-Raw samples live in a TimescaleDB hypertable (30-day retention by default).
-`samples_5m` / `samples_1h` continuous aggregates roll up the percentile bands so
-long-range charts stay fast — the series API auto-selects resolution by zoom range.
+Raw samples live in a TimescaleDB hypertable kept for **1 year** by default, with
+chunks older than **7 days transparently compressed** (a large storage saving with no
+query changes). `samples_5m` / `samples_1h` continuous aggregates roll up the percentile
+bands so long-range charts stay fast — the series API auto-selects resolution by zoom
+range. Adjust the retention/compression intervals in `packages/server/src/schema.ts`.
 
 ## Verification
 

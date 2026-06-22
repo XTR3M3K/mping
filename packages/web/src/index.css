@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 @layer base {
   html {
@@ -32,18 +31,23 @@
   .card {
     @apply bg-surface/80 backdrop-blur-sm border border-border/70 rounded-2xl shadow-card;
   }
-  .btn {
+  /* Tailwind v4: @apply only works with utilities, not other custom classes,
+     so the shared base lives in a grouped selector instead of `@apply btn`. */
+  .btn,
+  .btn-primary,
+  .btn-ghost,
+  .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium
            transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-primary {
-    @apply btn bg-accent hover:bg-accent-soft text-white shadow-glow;
+    @apply bg-accent hover:bg-accent-soft text-white shadow-glow;
   }
   .btn-ghost {
-    @apply btn bg-surface-2 hover:bg-surface-3 text-gray-200 border border-border;
+    @apply bg-surface-2 hover:bg-surface-3 text-gray-200 border border-border;
   }
   .btn-danger {
-    @apply btn bg-bad/15 hover:bg-bad/25 text-bad border border-bad/30;
+    @apply bg-bad/15 hover:bg-bad/25 text-bad border border-bad/30;
   }
   .input {
     @apply bg-surface-2 border border-border rounded-xl px-3 py-2 text-sm text-gray-100

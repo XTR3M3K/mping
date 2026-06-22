@@ -180,8 +180,28 @@ export const STATEMENTS: Stmt[] = [
       schedule_interval => INTERVAL '1 hour')`,
     ignoreIfContains: ["already", "duplicate"],
   },
+  // ── Compression: shrink raw chunks older than 7 days (transparent to queries) ──
   {
-    sql: `SELECT add_retention_policy('samples', INTERVAL '30 days', if_not_exists => TRUE)`,
+    sql: `ALTER TABLE samples SET (
+      timescaledb.compress,
+      timescaledb.compress_orderby = 'time DESC',
+      timescaledb.compress_segmentby = 'target_id, collector_id'
+    )`,
+    ignoreIfContains: ["already", "cannot change configuration"],
+  },
+  {
+    sql: `SELECT add_compression_policy('samples', INTERVAL '7 days', if_not_exists => TRUE)`,
+    ignoreIfContains: ["already", "duplicate"],
+  },
+
+  // ── Retention: keep raw samples for 1 year (continuous aggregates persist) ──
+  // Drop any pre-existing (e.g. older 30-day) policy first so upgrades take effect.
+  {
+    sql: `SELECT remove_retention_policy('samples', if_exists => TRUE)`,
+    ignoreIfContains: ["does not exist", "not exist"],
+  },
+  {
+    sql: `SELECT add_retention_policy('samples', INTERVAL '365 days', if_not_exists => TRUE)`,
     ignoreIfContains: ["already", "duplicate"],
   },
 ];
