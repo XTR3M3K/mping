@@ -1,7 +1,7 @@
 # mping
 
 A smokeping-style network latency monitor — a Node.js + React reimagining of
-[haze](https://github.com/consi/haze) with **multiple collectors**, **Discord
+[SmokePing](https://github.com/oetiker/SmokePing) with **multiple collectors**, **Discord
 alerts**, and **traceroute change history**.
 
 ![dark](https://img.shields.io/badge/theme-dark-7c5cff) ![node](https://img.shields.io/badge/node-%E2%89%A520-green)
