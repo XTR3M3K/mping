@@ -1,8 +1,45 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { promises as dns } from "node:dns";
 import type { Route } from "@mping/shared";
 
 const exec = promisify(execFile);
+
+// Reverse-DNS cache so stable routes don't re-resolve every cycle.
+const DNS_TTL_MS = 60 * 60 * 1000;
+const dnsCache = new Map<string, { host: string | null; at: number }>();
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("dns timeout")), ms)),
+  ]);
+}
+
+/** Best-effort PTR lookup for a hop IP (cached, time-boxed). */
+async function reverseDns(ip: string): Promise<string | null> {
+  const cached = dnsCache.get(ip);
+  if (cached && Date.now() - cached.at < DNS_TTL_MS) return cached.host;
+  let host: string | null = null;
+  try {
+    const names = await withTimeout(dns.reverse(ip), 1500);
+    host = names[0] ?? null;
+  } catch {
+    host = null; // no PTR / private range / timeout
+  }
+  dnsCache.set(ip, { host, at: Date.now() });
+  return host;
+}
+
+/** Populate each responding hop's `host` with its reverse-DNS name (parallel). */
+async function resolveHostnames(route: Route): Promise<Route> {
+  await Promise.all(
+    route.map(async (h) => {
+      if (h.ip) h.host = await reverseDns(h.ip);
+    }),
+  );
+  return route;
+}
 
 interface MtrHub {
   count: number;
@@ -12,13 +49,19 @@ interface MtrHub {
   Avg: number;
 }
 
-/** Try `mtr --json` first (per-hop loss/rtt), fall back to `traceroute`. */
+/**
+ * Try `mtr --json` first (per-hop loss/rtt), fall back to `traceroute`.
+ * We keep numeric output (`-n`) so IPs stay stable for change detection, then
+ * fill in reverse-DNS names separately for display.
+ */
 export async function traceOnce(host: string): Promise<Route> {
+  let route: Route;
   try {
-    return await traceMtr(host);
+    route = await traceMtr(host);
   } catch {
-    return await traceTraceroute(host);
+    route = await traceTraceroute(host);
   }
+  return resolveHostnames(route);
 }
 
 async function traceMtr(host: string): Promise<Route> {
