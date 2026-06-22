@@ -209,19 +209,19 @@ function TargetLink({
     <NavLink
       to={`/targets/${target.id}`}
       onClick={onNavigate}
+      title={`${target.name} — ${target.host}`}
       className={({ isActive }) =>
         clsx(
-          "flex items-center justify-between gap-2 rounded-lg py-2 pr-2.5 text-sm transition-colors",
+          "flex items-center gap-2 rounded-lg py-2 pr-2.5 text-sm transition-colors",
           isActive || target.id === activeId ? "bg-accent/15 text-white" : "text-gray-300 hover:bg-surface-2",
         )
       }
       style={{ paddingLeft: depth * 14 + 8 }}
     >
-      <span className="flex items-center gap-2 min-w-0">
-        <span className={clsx("h-1.5 w-1.5 rounded-full shrink-0", target.enabled ? "bg-accent" : "bg-faint")} />
-        <span className="truncate">{target.name}</span>
-      </span>
-      <span className="text-[11px] font-mono shrink-0 text-faint">{target.host}</span>
+      <span className={clsx("h-1.5 w-1.5 rounded-full shrink-0", target.enabled ? "bg-accent" : "bg-faint")} />
+      {/* Name takes the full row width now; IP lives on the dashboard/detail
+          and in the hover tooltip so long names stay readable. */}
+      <span className="truncate min-w-0 flex-1">{target.name}</span>
     </NavLink>
   );
 }
