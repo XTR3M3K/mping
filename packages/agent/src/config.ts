@@ -3,12 +3,21 @@ function arg(flag: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+function num(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 export interface AgentConfig {
   server: string;
   token: string;
   name: string;
   /** How often to re-pull the target list from the server (seconds). */
   configRefreshSec: number;
+  /** Upper bound on probe cycles running at the same instant. */
+  maxConcurrentProbes: number;
+  /** Traceroutes are far heavier than a probe, so they get their own budget. */
+  maxConcurrentTraceroutes: number;
 }
 
 export function loadConfig(): AgentConfig {
@@ -23,6 +32,8 @@ export function loadConfig(): AgentConfig {
     server,
     token,
     name,
-    configRefreshSec: Number(process.env.MPING_CONFIG_REFRESH_SEC ?? 60),
+    configRefreshSec: num(process.env.MPING_CONFIG_REFRESH_SEC, 30),
+    maxConcurrentProbes: num(process.env.MPING_MAX_CONCURRENT_PROBES, 32),
+    maxConcurrentTraceroutes: num(process.env.MPING_MAX_CONCURRENT_TRACEROUTES, 4),
   };
 }

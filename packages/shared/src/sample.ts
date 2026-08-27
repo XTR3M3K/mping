@@ -64,3 +64,17 @@ export const SeriesResponseSchema = z.object({
   series: z.array(CollectorSeriesSchema),
 });
 export type SeriesResponse = z.infer<typeof SeriesResponseSchema>;
+
+/** Series for several targets in one round-trip (dashboard grid). */
+export const MultiSeriesResponseSchema = z.object({
+  resolution: SeriesResolutionSchema,
+  from: z.number(),
+  to: z.number(),
+  targets: z.array(
+    z.object({
+      target_id: z.number().int(),
+      series: z.array(CollectorSeriesSchema),
+    }),
+  ),
+});
+export type MultiSeriesResponse = z.infer<typeof MultiSeriesResponseSchema>;

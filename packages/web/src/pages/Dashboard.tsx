@@ -1,16 +1,44 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Activity, Plus, Radio } from "lucide-react";
-import type { Target, CollectorSeries } from "@mping/shared";
+import type { CollectorSeries, MultiSeriesResponse, Target } from "@mping/shared";
+import { probeLabel } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { useUI } from "../state/ui.js";
 import { SmokeChart } from "../components/SmokeChart.js";
 import { Chip, EmptyState, Skeleton } from "../components/ui.js";
 import { fmtMs, fmtLoss, lossColor, collectorColor } from "../lib/format.js";
+import { probeAddress } from "../lib/probe.js";
+
+/** Round the window to whole minutes so the query key is stable between renders. */
+const BUCKET_MS = 60_000;
 
 export function Dashboard() {
+  const { rangeMs, live } = useUI();
   const { data: targets, isLoading } = useQuery({ queryKey: ["targets"], queryFn: api.listTargets });
+
+  const to = Math.ceil(Date.now() / BUCKET_MS) * BUCKET_MS;
+  const from = to - rangeMs;
+  const ids = useMemo(() => (targets ?? []).map((t) => t.id), [targets]);
+
+  // A single request for every card: one per card used to queue behind the
+  // server's connection pool once there were more than a handful of probes,
+  // which is what left cards blank and charts full of gaps.
+  const { data: series, isLoading: seriesLoading } = useQuery<MultiSeriesResponse>({
+    queryKey: ["dashboard-series", ids, from, to],
+    queryFn: () => api.multiSeries(ids, from, to),
+    enabled: ids.length > 0,
+    refetchInterval: live ? 15_000 : false,
+    // Keep the previous window on screen while the next one loads.
+    placeholderData: keepPreviousData,
+  });
+
+  const byTarget = useMemo(() => {
+    const map = new Map<number, CollectorSeries[]>();
+    for (const entry of series?.targets ?? []) map.set(entry.target_id, entry.series);
+    return map;
+  }, [series]);
 
   return (
     <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
@@ -46,7 +74,14 @@ export function Dashboard() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {targets.map((t) => (
-            <TargetCard key={t.id} target={t} />
+            <TargetCard
+              key={t.id}
+              target={t}
+              series={byTarget.get(t.id) ?? []}
+              loading={seriesLoading}
+              from={from}
+              to={to}
+            />
           ))}
         </div>
       )}
@@ -54,24 +89,25 @@ export function Dashboard() {
   );
 }
 
-function TargetCard({ target }: { target: Target }) {
-  const { rangeMs, live } = useUI();
-  const to = Date.now();
-  const from = to - rangeMs;
-  const { data, isLoading } = useQuery({
-    queryKey: ["series", target.id, Math.round(from / 60000), Math.round(to / 60000)],
-    queryFn: () => api.series(target.id, from, to),
-    refetchInterval: live ? 15_000 : false,
-  });
-
+function TargetCard({
+  target,
+  series,
+  loading,
+  from,
+  to,
+}: {
+  target: Target;
+  series: CollectorSeries[];
+  loading: boolean;
+  from: number;
+  to: number;
+}) {
   // Representative series = collector with the most points.
-  const rep: CollectorSeries | undefined = useMemo(() => {
-    if (!data?.series.length) return undefined;
-    return [...data.series].sort((a, b) => b.points.length - a.points.length)[0];
-  }, [data]);
-
+  const rep: CollectorSeries | undefined = useMemo(
+    () => [...series].sort((a, b) => b.points.length - a.points.length)[0],
+    [series],
+  );
   const last = rep?.points[rep.points.length - 1];
-  const collectors = data?.series ?? [];
 
   return (
     <Link
@@ -83,7 +119,7 @@ function TargetCard({ target }: { target: Target }) {
           <div className="font-semibold truncate group-hover:text-accent-soft transition-colors">
             {target.name}
           </div>
-          <div className="text-xs text-faint font-mono truncate">{target.host}</div>
+          <div className="text-xs text-faint font-mono truncate">{probeAddress(target)}</div>
         </div>
         <div className="text-right shrink-0 ml-3">
           <div className={`text-lg font-bold font-mono ${lossColor(last?.loss_pct)}`}>
@@ -94,10 +130,10 @@ function TargetCard({ target }: { target: Target }) {
       </div>
 
       <div className="-mx-1">
-        {isLoading ? (
-          <Skeleton className="h-[120px] rounded-xl mx-1" />
-        ) : rep && rep.points.length > 0 ? (
+        {rep && rep.points.length > 0 ? (
           <SmokeChart points={rep.points} height={120} compact thresholdMs={target.latency_threshold_ms} domainX={[from, to]} />
+        ) : loading ? (
+          <Skeleton className="h-[120px] rounded-xl mx-1" />
         ) : (
           <div className="h-[120px] grid place-items-center text-xs text-faint">
             <span className="flex items-center gap-1.5">
@@ -108,7 +144,8 @@ function TargetCard({ target }: { target: Target }) {
       </div>
 
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-        {collectors.map((c) => (
+        <Chip tone={target.type === "ping" ? "neutral" : "accent"}>{probeLabel(target.type)}</Chip>
+        {series.map((c) => (
           <Chip key={c.collector_id} className="!bg-surface-2">
             <span className="h-2 w-2 rounded-full" style={{ background: collectorColor(c.collector_id) }} />
             {c.collector_name}

@@ -40,6 +40,25 @@ function lossRGB(pct: number): [number, number, number] {
   return stops[stops.length - 1]![1];
 }
 
+/**
+ * Split points into runs where both band edges are present. A single-point run
+ * still gets drawn (as a hairline) so isolated samples don't vanish.
+ */
+function runsOf(points: SeriesPoint[], lo: number, hi: number): SeriesPoint[][] {
+  const runs: SeriesPoint[][] = [];
+  let current: SeriesPoint[] = [];
+  for (const p of points) {
+    if (p.bands[lo] == null || p.bands[hi] == null) {
+      if (current.length) runs.push(current);
+      current = [];
+      continue;
+    }
+    current.push(p);
+  }
+  if (current.length) runs.push(current);
+  return runs;
+}
+
 function niceMax(v: number): number {
   if (v <= 0) return 10;
   const pow = Math.pow(10, Math.floor(Math.log10(v)));
@@ -114,33 +133,27 @@ export function SmokeChart({ points, height = 220, domainX, thresholdMs, compact
       [1, 5, 0.16],
       [2, 4, 0.26],
     ];
+    // Points without a full percentile ladder (the live tail carries a median
+    // only) split the smoke into separate polygons — filling across them would
+    // fold the shape back on itself and tear a hole through the band.
     for (const [lo, hi, alpha] of bandPairs) {
-      ctx.beginPath();
-      let started = false;
-      // upper edge L→R
-      for (const p of points) {
-        const top = p.bands[hi];
-        if (top == null) {
-          started = false;
-          continue;
-        }
-        const X = sx(p.t);
-        const Y = sy(top);
-        if (!started) {
-          ctx.moveTo(X, Y);
-          started = true;
-        } else ctx.lineTo(X, Y);
-      }
-      // lower edge R→L
-      for (let i = points.length - 1; i >= 0; i--) {
-        const p = points[i]!;
-        const bot = p.bands[lo];
-        if (bot == null) continue;
-        ctx.lineTo(sx(p.t), sy(bot));
-      }
-      ctx.closePath();
       ctx.fillStyle = `rgba(${accent.r},${accent.g},${accent.b},${alpha})`;
-      ctx.fill();
+      for (const run of runsOf(points, lo, hi)) {
+        ctx.beginPath();
+        for (let i = 0; i < run.length; i++) {
+          const p = run[i]!;
+          const X = sx(p.t);
+          const Y = sy(p.bands[hi]!);
+          if (i === 0) ctx.moveTo(X, Y);
+          else ctx.lineTo(X, Y);
+        }
+        for (let i = run.length - 1; i >= 0; i--) {
+          const p = run[i]!;
+          ctx.lineTo(sx(p.t), sy(p.bands[lo]!));
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
     }
 
     // Threshold line

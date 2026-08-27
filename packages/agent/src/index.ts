@@ -1,11 +1,17 @@
 import type { AgentTarget, Sample } from "@mping/shared";
 import { loadConfig } from "./config.js";
-import { ServerClient } from "./client.js";
-import { pingOnce } from "./ping.js";
+import { ServerClient, HttpError } from "./client.js";
+import { probeOnce, lossSample } from "./probe.js";
 import { traceOnce } from "./traceroute.js";
+import { Limiter } from "./limiter.js";
 
 const cfg = loadConfig();
 const client = new ServerClient(cfg);
+
+// Probes are capped so a large target list can't spawn hundreds of pings (or
+// sockets) at once — that used to starve the event loop and drop whole cycles.
+const probeLimiter = new Limiter(cfg.maxConcurrentProbes);
+const traceLimiter = new Limiter(cfg.maxConcurrentTraceroutes);
 
 // ── Resilient sample buffer: survives transient server outages ──
 const MAX_BUFFER = 5000;
@@ -24,7 +30,22 @@ async function flushLoop(): Promise<void> {
         await client.pushSamples(batch);
         buffer = buffer.slice(batch.length);
       } catch (err) {
-        console.warn(`[flush] ${(err as Error).message} — buffered ${buffer.length}`);
+        // A batch the server refuses outright (bad request) would otherwise be
+        // retried forever, freezing every other probe's history behind it.
+        // 401/403/429 are transient (rotated token, rate limit) — keep those.
+        const fatal =
+          err instanceof HttpError &&
+          err.status >= 400 &&
+          err.status < 500 &&
+          ![401, 403, 429].includes(err.status);
+        if (fatal) {
+          console.warn(
+            `[flush] server rejected ${batch.length} sample(s): ${(err as Error).message} — dropping`,
+          );
+          buffer = buffer.slice(batch.length);
+        } else {
+          console.warn(`[flush] ${(err as Error).message} — buffered ${buffer.length}`);
+        }
       }
     }
     await sleep(2000);
@@ -37,37 +58,54 @@ class TargetRunner {
   constructor(public target: AgentTarget) {}
 
   start(): void {
-    void this.pingLoop();
-    if (this.target.traceroute_enabled) void this.traceLoop();
+    void this.loop(this.target.interval_sec, probeLimiter, () => this.probe());
+    if (this.target.traceroute_enabled) {
+      void this.loop(this.target.traceroute_interval_sec, traceLimiter, () => this.trace());
+    }
   }
 
   stop(): void {
     this.stopped = true;
   }
 
-  private async pingLoop(): Promise<void> {
+  /**
+   * Fixed-cadence scheduler: ticks are absolute so a slow cycle doesn't push
+   * every later one back, and the first tick is jittered so N targets don't all
+   * fire in the same instant after a config reload.
+   */
+  private async loop(intervalSec: number, limiter: Limiter, run: () => Promise<void>): Promise<void> {
+    const period = intervalSec * 1000;
+    let next = Date.now() + Math.random() * Math.min(period, 10_000);
     while (!this.stopped) {
-      const t = this.target;
-      try {
-        const sample = await pingOnce(t.id, t.host, t.ping_count, t.packet_size);
-        enqueue(sample);
-      } catch (err) {
-        console.warn(`[ping ${t.host}] ${(err as Error).message}`);
-      }
-      await sleep(this.target.interval_sec * 1000);
+      await sleep(Math.max(0, next - Date.now()));
+      if (this.stopped) return;
+      await limiter.run(run);
+      next += period;
+      // Fell far behind (suspended laptop, overloaded host): resync instead of
+      // firing a burst of catch-up cycles.
+      if (next < Date.now()) next = Date.now() + period;
     }
   }
 
-  private async traceLoop(): Promise<void> {
-    while (!this.stopped) {
-      const t = this.target;
-      try {
-        const hops = await traceOnce(t.host);
-        if (hops.length > 0) await client.pushTraceroute(t.id, hops);
-      } catch (err) {
-        console.warn(`[trace ${t.host}] ${(err as Error).message}`);
-      }
-      await sleep(this.target.traceroute_interval_sec * 1000);
+  private async probe(): Promise<void> {
+    const t = this.target;
+    const startedAt = new Date();
+    try {
+      enqueue(await probeOnce(t));
+    } catch (err) {
+      // A probe that couldn't even run is an outage, not a missing data point.
+      console.warn(`[probe ${t.type} ${t.host}] ${(err as Error).message}`);
+      enqueue(lossSample(t.id, startedAt));
+    }
+  }
+
+  private async trace(): Promise<void> {
+    const t = this.target;
+    try {
+      const hops = await traceOnce(t.host);
+      if (hops.length > 0) await client.pushTraceroute(t.id, hops);
+    } catch (err) {
+      console.warn(`[trace ${t.host}] ${(err as Error).message}`);
     }
   }
 }
@@ -83,7 +121,7 @@ function reconcile(targets: AgentTarget[]): void {
       const r = new TargetRunner(t);
       runners.set(t.id, r);
       r.start();
-      console.log(`+ target ${t.id} ${t.host} (ping ${t.interval_sec}s)`);
+      console.log(`+ target ${t.id} ${t.type} ${t.host} (every ${t.interval_sec}s)`);
     } else if (JSON.stringify(existing.target) !== JSON.stringify(t)) {
       existing.stop();
       const r = new TargetRunner(t);
@@ -96,6 +134,9 @@ function reconcile(targets: AgentTarget[]): void {
     if (!seen.has(id)) {
       r.stop();
       runners.delete(id);
+      // Drop anything still buffered for it so a deleted probe can't keep
+      // pushing samples the server will reject.
+      buffer = buffer.filter((s) => s.target_id !== id);
       console.log(`- target ${id} removed`);
     }
   }

@@ -20,4 +20,9 @@ export const env = {
   bootstrapCollectorToken: process.env.BOOTSTRAP_COLLECTOR_TOKEN ?? "",
   /** A collector is considered online if seen within this many seconds. */
   collectorOnlineWindowSec: 90,
+  /**
+   * Postgres pool size. Sample ingest and the dashboard share it, so a small
+   * pool makes charts stall behind a busy collector fleet.
+   */
+  pgPoolMax: Number(process.env.PG_POOL_MAX ?? 20),
 };

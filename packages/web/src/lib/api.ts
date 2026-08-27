@@ -1,6 +1,7 @@
 import type {
   AlertEvent,
   Collector,
+  MultiSeriesResponse,
   SeriesResponse,
   Settings,
   Target,
@@ -66,6 +67,15 @@ export const api = {
     const p = new URLSearchParams({ from: String(from), to: String(to) });
     if (collectorIds?.length) p.set("collectorIds", collectorIds.join(","));
     return req<SeriesResponse>(`/targets/${id}/series?${p}`);
+  },
+  /** One request for the whole dashboard grid instead of one per card. */
+  multiSeries: (targetIds: number[], from: number, to: number) => {
+    const p = new URLSearchParams({
+      targetIds: targetIds.join(","),
+      from: String(from),
+      to: String(to),
+    });
+    return req<MultiSeriesResponse>(`/series?${p}`);
   },
   traceroute: (id: number, collectorId: number) =>
     req<TracerouteView>(`/targets/${id}/traceroute?collectorId=${collectorId}`),

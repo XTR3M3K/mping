@@ -8,8 +8,14 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (v) => (v === null ? null : parse
 
 export const pool = new pg.Pool({
   connectionString: env.databaseUrl,
-  max: 10,
+  max: env.pgPoolMax,
+  // Keep a stuck query from holding a connection hostage forever.
+  statement_timeout: 60_000,
 });
+
+// A pool error (server restart, idle connection reset) must not crash the
+// process — pg emits it on the pool, where an unhandled 'error' is fatal.
+pool.on("error", (err) => console.error(`[pg] idle client error: ${err.message}`));
 
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,

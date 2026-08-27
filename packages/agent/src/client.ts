@@ -1,6 +1,17 @@
 import { AgentConfigSchema, type AgentConfig, type Sample, type Route } from "@mping/shared";
 import type { AgentConfig as RuntimeConfig } from "./config.js";
 
+/** Carries the status code so callers can tell "retry later" from "give up". */
+export class HttpError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 export class ServerClient {
   constructor(private readonly cfg: RuntimeConfig) {}
 
@@ -11,37 +22,35 @@ export class ServerClient {
     };
   }
 
-  async register(): Promise<void> {
-    const res = await fetch(`${this.cfg.server}/api/agent/register`, {
+  private async post(path: string, body: unknown, what: string): Promise<void> {
+    const res = await fetch(`${this.cfg.server}${path}`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ name: this.cfg.name }),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`register failed: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new HttpError(res.status, `${what} failed: ${res.status} ${await res.text()}`);
+  }
+
+  async register(): Promise<void> {
+    await this.post("/api/agent/register", { name: this.cfg.name }, "register");
   }
 
   async fetchConfig(): Promise<AgentConfig> {
     const res = await fetch(`${this.cfg.server}/api/agent/config`, { headers: this.headers() });
-    if (!res.ok) throw new Error(`config fetch failed: ${res.status}`);
+    if (!res.ok) throw new HttpError(res.status, `config fetch failed: ${res.status}`);
     return AgentConfigSchema.parse(await res.json());
   }
 
   async pushSamples(samples: Sample[]): Promise<void> {
     if (samples.length === 0) return;
-    const res = await fetch(`${this.cfg.server}/api/agent/samples`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ samples }),
-    });
-    if (!res.ok) throw new Error(`sample push failed: ${res.status} ${await res.text()}`);
+    await this.post("/api/agent/samples", { samples }, "sample push");
   }
 
   async pushTraceroute(targetId: number, hops: Route): Promise<void> {
-    const res = await fetch(`${this.cfg.server}/api/agent/traceroute`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ target_id: targetId, run_at: new Date().toISOString(), hops }),
-    });
-    if (!res.ok) throw new Error(`traceroute push failed: ${res.status} ${await res.text()}`);
+    await this.post(
+      "/api/agent/traceroute",
+      { target_id: targetId, run_at: new Date().toISOString(), hops },
+      "traceroute push",
+    );
   }
 }

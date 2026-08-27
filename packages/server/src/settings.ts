@@ -23,14 +23,26 @@ async function setRaw(key: string, value: unknown): Promise<void> {
   );
 }
 
+// Alert evaluation reads settings once per sample, so a busy collector fleet
+// would otherwise spend most of its DB round-trips re-reading this one row.
+const SETTINGS_TTL_MS = 5_000;
+let cache: { value: Settings; at: number } | null = null;
+
 export async function getSettings(): Promise<Settings> {
+  if (cache && Date.now() - cache.at < SETTINGS_TTL_MS) return cache.value;
   const stored = await getRaw<Partial<Settings>>("app");
-  return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+  const value = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+  cache = { value, at: Date.now() };
+  return value;
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch };
+  // Read past the cache: the UI saves one field per blur, and merging onto a
+  // stale copy would silently revert whatever was saved a moment earlier.
+  const stored = await getRaw<Partial<Settings>>("app");
+  const next = { ...DEFAULT_SETTINGS, ...(stored ?? {}), ...patch };
   await setRaw("app", next);
+  cache = { value: next, at: Date.now() };
   return next;
 }
 

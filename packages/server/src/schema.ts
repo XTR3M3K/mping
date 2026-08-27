@@ -183,15 +183,39 @@ export const STATEMENTS: Stmt[] = [
       WITH NO DATA`,
     ignoreIfContains: ["already exists"],
   },
+  // Real-time aggregation: TimescaleDB ≥ 2.13 creates aggregates as
+  // materialized-only, which hides every bucket newer than the last refresh —
+  // that is the gap at the right edge of every 12h/24h/7d chart. Unioning the
+  // raw hypertable back in removes it.
+  {
+    sql: `ALTER MATERIALIZED VIEW samples_5m SET (timescaledb.materialized_only = false)`,
+    ignoreIfContains: ["does not exist"],
+  },
+  {
+    sql: `ALTER MATERIALIZED VIEW samples_1h SET (timescaledb.materialized_only = false)`,
+    ignoreIfContains: ["does not exist"],
+  },
+  // Refresh windows are deliberately much wider than the schedule interval:
+  // with a 3h window, any server/DB outage longer than 3h left a permanently
+  // un-materialized hole below the watermark that never healed.
+  // Policies are recreated so these offsets also apply to existing databases.
+  {
+    sql: `SELECT remove_continuous_aggregate_policy('samples_5m', if_not_exists => TRUE)`,
+    ignoreIfContains: ["does not exist", "not exist", "no policy"],
+  },
+  {
+    sql: `SELECT remove_continuous_aggregate_policy('samples_1h', if_not_exists => TRUE)`,
+    ignoreIfContains: ["does not exist", "not exist", "no policy"],
+  },
   {
     sql: `SELECT add_continuous_aggregate_policy('samples_5m',
-      start_offset => INTERVAL '3 hours', end_offset => INTERVAL '5 minutes',
+      start_offset => INTERVAL '2 days', end_offset => INTERVAL '5 minutes',
       schedule_interval => INTERVAL '5 minutes')`,
     ignoreIfContains: ["already", "duplicate"],
   },
   {
     sql: `SELECT add_continuous_aggregate_policy('samples_1h',
-      start_offset => INTERVAL '3 days', end_offset => INTERVAL '1 hour',
+      start_offset => INTERVAL '30 days', end_offset => INTERVAL '1 hour',
       schedule_interval => INTERVAL '1 hour')`,
     ignoreIfContains: ["already", "duplicate"],
   },
