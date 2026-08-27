@@ -8,12 +8,15 @@ alerts**, and **traceroute change history**.
 
 ## What it does
 
+- **Four probe types** — ICMP ping, TCP handshake, HTTP and HTTPS (time to response
+  headers, with an expected status code and optional TLS verification). They all feed
+  the same charts, alerts and history, so a web endpoint sits next to a router.
 - **Smoke charts** — latency distribution drawn as nested percentile bands, with the
   median line coloured by packet loss. Custom retina Canvas renderer.
 - **Multiple collectors** — run lightweight agents on as many boxes as you like
   (`location-a`, `location-b`, …). Each probe's detail page shows **per-collector charts**
   side-by-side (grid) or **overlaid** on one axis.
-- **Discord alerts (ping probes)** — pretty embeds when a probe's **median latency**
+- **Discord alerts** — pretty embeds when a probe's **median latency**
   or **packet loss** crosses a per-probe threshold (🔴 firing / 🟢 recovered), with a
   debounced state machine so it doesn't flap.
 - **Traceroute history** — agents trace the path; when the route changes a new
@@ -47,7 +50,7 @@ Packages (pnpm workspace, TypeScript throughout):
 |---|---|
 | `@mping/shared` | zod schemas + types + stats/percentile/route helpers (browser-safe) |
 | `@mping/server` | Fastify API, TimescaleDB, alert engine, Discord, serves the SPA |
-| `@mping/agent`  | collector daemon — shells out to `ping` + `mtr`/`traceroute` |
+| `@mping/agent`  | collector daemon — `ping` + TCP/HTTP probes, `mtr`/`traceroute` |
 | `@mping/web`    | Vite + React + Tailwind dark UI, Canvas smoke charts |
 
 ## Quick start (dev)
@@ -68,7 +71,8 @@ Open http://localhost:5173 and log in with `ADMIN_PASSWORD` (default `admin`).
 
 Then:
 1. **Settings → Collectors → Create** a collector (e.g. `location-a`). Copy its token.
-2. **Settings → Probes → Add** a probe (e.g. `1.1.1.1`), set a latency threshold.
+2. **Settings → Probes → Add** a probe — pick ICMP / TCP / HTTP / HTTPS, give it a
+   host (plus port and path for the connection probes) and a latency threshold.
 3. Run an agent:
 
 ```bash
@@ -125,6 +129,11 @@ Server env (`.env`):
 | `PUBLIC_URL` | `http://localhost:4420` | base URL for Discord embed links |
 | `SESSION_SECRET` | — | cookie signing secret (≥ 32 chars) |
 | `ADMIN_PASSWORD` | `admin` | seeds the UI password on first boot |
+| `PG_POOL_MAX` | `20` | Postgres connections; raise it for a large collector fleet |
+
+Agent env (see [`packages/agent/README.md`](packages/agent/README.md)) additionally
+takes `MPING_CONFIG_REFRESH_SEC` (30), `MPING_MAX_CONCURRENT_PROBES` (32) and
+`MPING_MAX_CONCURRENT_TRACEROUTES` (4).
 
 Discord webhook + default thresholds + alert debounce are set in **Settings**;
 per-probe thresholds and webhook overrides are set on each probe.
