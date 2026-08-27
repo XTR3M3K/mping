@@ -58,10 +58,14 @@ export const STATEMENTS: Stmt[] = [
   },
 
   {
+    // No FK to targets/collectors on purpose: a cascading delete over a
+    // compressed hypertable takes minutes and blocks the API request that
+    // triggered it. Orphan rows are filtered on read and purged in the
+    // background instead (see purge.ts).
     sql: `CREATE TABLE IF NOT EXISTS samples (
       time         TIMESTAMPTZ NOT NULL,
-      target_id    INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
-      collector_id INTEGER NOT NULL REFERENCES collectors(id) ON DELETE CASCADE,
+      target_id    INTEGER NOT NULL,
+      collector_id INTEGER NOT NULL,
       loss_pct     DOUBLE PRECISION NOT NULL,
       min_ms       DOUBLE PRECISION,
       max_ms       DOUBLE PRECISION,
@@ -79,6 +83,9 @@ export const STATEMENTS: Stmt[] = [
     sql: `CREATE INDEX IF NOT EXISTS samples_target_collector_time_idx
           ON samples (target_id, collector_id, time DESC)`,
   },
+  // Upgrade path for databases created before the FKs were dropped.
+  { sql: `ALTER TABLE samples DROP CONSTRAINT IF EXISTS samples_target_id_fkey` },
+  { sql: `ALTER TABLE samples DROP CONSTRAINT IF EXISTS samples_collector_id_fkey` },
 
   {
     sql: `CREATE TABLE IF NOT EXISTS traceroute_runs (

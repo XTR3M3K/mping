@@ -3,6 +3,7 @@ import type { Collector } from "@mping/shared";
 import { query } from "../db.js";
 import { generateToken, hashToken } from "../crypto.js";
 import { env } from "../env.js";
+import { schedulePurge } from "../purge.js";
 import { requireAuth } from "./auth.js";
 
 interface CollectorRow {
@@ -68,7 +69,11 @@ export async function collectorRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete("/api/collectors/:id", async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
-    await query(`DELETE FROM collectors WHERE id = $1`, [id]);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: "invalid id" });
+    const { rowCount } = await query(`DELETE FROM collectors WHERE id = $1`, [id]);
+    if (!rowCount) return reply.code(404).send({ error: "not found" });
+    // Its samples carry no FK (see purge.ts) — clean them up off the request path.
+    schedulePurge({ collectorId: id }, req.log);
     return reply.code(204).send();
   });
 }

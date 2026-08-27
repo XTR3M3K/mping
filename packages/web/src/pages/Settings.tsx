@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Server, Copy, RefreshCw, KeyRound, Check } from "lucide-react";
-import type { Target } from "@mping/shared";
+import type { Collector, Target } from "@mping/shared";
+import { probeLabel } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { TargetEditor } from "../components/TargetEditor.js";
+import { Modal } from "../components/Modal.js";
 import { SectionTitle, StatusDot, Chip, Skeleton } from "../components/ui.js";
 import { fmtRelTime } from "../lib/format.js";
+import { probeAddress } from "../lib/probe.js";
 
 export function Settings() {
   return (
@@ -27,9 +30,18 @@ function ProbesSection() {
   const { data: targets, isLoading } = useQuery({ queryKey: ["targets"], queryFn: api.listTargets });
   const [editing, setEditing] = useState<Target | undefined>(undefined);
   const [open, setOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Target | null>(null);
+
   const del = useMutation({
     mutationFn: (id: number) => api.deleteTarget(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["targets"] }),
+    onSuccess: (_res, id) => {
+      setPendingDelete(null);
+      // Every view that could still be holding this probe's data.
+      qc.removeQueries({ queryKey: ["target", id] });
+      qc.invalidateQueries({ queryKey: ["targets"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-series"] });
+      qc.invalidateQueries({ queryKey: ["alerts"] });
+    },
   });
 
   return (
@@ -48,21 +60,80 @@ function ProbesSection() {
               <span className={`h-2 w-2 rounded-full shrink-0 ${t.enabled ? "bg-accent" : "bg-faint"}`} />
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{t.name}</div>
-                <div className="text-xs text-faint font-mono truncate">{t.host} · every {t.interval_sec}s · {t.ping_count} pings</div>
+                <div className="text-xs text-faint font-mono truncate">
+                  {probeAddress(t)} · every {t.interval_sec}s · {t.ping_count} {t.type === "ping" ? "pings" : "checks"}
+                </div>
               </div>
               <div className="hidden sm:flex items-center gap-1.5">
+                <Chip tone={t.type === "ping" ? "neutral" : "accent"}>{probeLabel(t.type)}</Chip>
                 {t.group_name && <Chip>{t.group_name}</Chip>}
                 {t.latency_threshold_ms != null && <Chip tone="accent">{t.latency_threshold_ms}ms</Chip>}
                 {t.traceroute_enabled && <Chip tone="neutral">trace</Chip>}
               </div>
               <button className="btn-ghost py-1.5 px-2" onClick={() => { setEditing(t); setOpen(true); }}><Pencil className="h-4 w-4" /></button>
-              <button className="btn-danger py-1.5 px-2" onClick={() => confirm(`Delete ${t.name}?`) && del.mutate(t.id)}><Trash2 className="h-4 w-4" /></button>
+              <button
+                className="btn-danger py-1.5 px-2"
+                disabled={del.isPending && pendingDelete?.id === t.id}
+                onClick={() => { del.reset(); setPendingDelete(t); }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
           ))
         )}
       </div>
       <TargetEditor open={open} onClose={() => setOpen(false)} target={editing} />
+      <ConfirmDelete
+        what={pendingDelete ? `probe “${pendingDelete.name}”` : ""}
+        detail="Its history is removed in the background; collectors stop probing it within a minute."
+        open={pendingDelete !== null}
+        pending={del.isPending}
+        error={del.error ? (del.error as Error).message : null}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => pendingDelete && del.mutate(pendingDelete.id)}
+      />
     </section>
+  );
+}
+
+/** Shared destructive-action dialog: shows progress and, crucially, failures. */
+function ConfirmDelete({
+  what,
+  detail,
+  open,
+  pending,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  what: string;
+  detail?: ReactNode;
+  open: boolean;
+  pending: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={pending ? () => undefined : onCancel}
+      title="Delete?"
+      footer={
+        <>
+          <button className="btn-ghost" onClick={onCancel} disabled={pending}>Cancel</button>
+          <button className="btn-danger" onClick={onConfirm} disabled={pending}>
+            {pending ? "Deleting…" : "Delete"}
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm">
+        Permanently delete the {what}?
+      </p>
+      {detail && <p className="text-xs text-faint mt-2">{detail}</p>}
+      {error && <p className="text-sm text-bad mt-3">{error}</p>}
+    </Modal>
   );
 }
 
@@ -135,9 +206,14 @@ function CollectorsSection() {
     mutationFn: (id: number) => api.rotateCollectorToken(id),
     onSuccess: (res, id) => setNewToken({ name: collectors?.find((c) => c.id === id)?.name ?? "collector", token: res.token }),
   });
+  const [pendingDelete, setPendingDelete] = useState<Collector | null>(null);
   const del = useMutation({
     mutationFn: (id: number) => api.deleteCollector(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["collectors"] }),
+    onSuccess: () => {
+      setPendingDelete(null);
+      qc.invalidateQueries({ queryKey: ["collectors"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-series"] });
+    },
   });
 
   return (
@@ -175,12 +251,27 @@ function CollectorsSection() {
                   <div className="text-xs text-faint">{c.online ? "online" : `last seen ${fmtRelTime(c.last_seen_at)}`}</div>
                 </div>
                 <button className="btn-ghost py-1.5 px-2" title="Rotate token" onClick={() => rotate.mutate(c.id)}><RefreshCw className="h-4 w-4" /></button>
-                <button className="btn-danger py-1.5 px-2" onClick={() => confirm(`Delete collector ${c.name}? Its data is removed.`) && del.mutate(c.id)}><Trash2 className="h-4 w-4" /></button>
+                <button
+                  className="btn-danger py-1.5 px-2"
+                  disabled={del.isPending && pendingDelete?.id === c.id}
+                  onClick={() => { del.reset(); setPendingDelete(c); }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
         )}
       </div>
+      <ConfirmDelete
+        what={pendingDelete ? `collector “${pendingDelete.name}”` : ""}
+        detail="Its samples are removed in the background. The agent can no longer connect with this token."
+        open={pendingDelete !== null}
+        pending={del.isPending}
+        error={del.error ? (del.error as Error).message : null}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => pendingDelete && del.mutate(pendingDelete.id)}
+      />
     </section>
   );
 }
