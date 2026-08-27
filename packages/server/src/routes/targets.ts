@@ -1,14 +1,20 @@
 import type { FastifyInstance } from "fastify";
-import { TargetCreateSchema, TargetUpdateSchema } from "@mping/shared";
+import { TargetCreateSchema, TargetUpdateSchema, defaultPort } from "@mping/shared";
 import { query } from "../db.js";
 import { getTargetById, listTargets, mapTarget, type TargetRow } from "../repo.js";
 import { requireAuth } from "./auth.js";
 
 const DEFAULTS = {
+  type: "ping" as const,
   group_name: null,
   interval_sec: 60,
   ping_count: 20,
   packet_size: 56,
+  port: null as number | null,
+  http_path: null as string | null,
+  http_expect_status: null as number | null,
+  verify_tls: true,
+  timeout_ms: 5000,
   enabled: true,
   latency_threshold_ms: null,
   alert_on_loss_pct: null,
@@ -16,6 +22,14 @@ const DEFAULTS = {
   traceroute_interval_sec: 300,
   discord_webhook_url: null,
 };
+
+/** Columns a client may write, in insert order. */
+const COLUMNS = [
+  "name", "host", "type", "group_name", "interval_sec", "ping_count", "packet_size",
+  "port", "http_path", "http_expect_status", "verify_tls", "timeout_ms", "enabled",
+  "latency_threshold_ms", "alert_on_loss_pct", "traceroute_enabled", "traceroute_interval_sec",
+  "discord_webhook_url",
+] as const;
 
 export async function targetRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);
@@ -33,16 +47,14 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
     const parsed = TargetCreateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
     const t = { ...DEFAULTS, ...parsed.data };
+    // http/https probes work without an explicit port; fill in the scheme default.
+    if (t.port == null) t.port = defaultPort(t.type);
+
+    const values = COLUMNS.map((c) => (t as Record<string, unknown>)[c]);
+    const placeholders = COLUMNS.map((_, i) => `$${i + 1}`).join(",");
     const { rows } = await query<TargetRow>(
-      `INSERT INTO targets
-        (name, host, type, group_name, interval_sec, ping_count, packet_size, enabled,
-         latency_threshold_ms, alert_on_loss_pct, traceroute_enabled, traceroute_interval_sec, discord_webhook_url)
-       VALUES ($1,$2,'ping',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [
-        t.name, t.host, t.group_name, t.interval_sec, t.ping_count, t.packet_size, t.enabled,
-        t.latency_threshold_ms, t.alert_on_loss_pct, t.traceroute_enabled, t.traceroute_interval_sec,
-        t.discord_webhook_url,
-      ],
+      `INSERT INTO targets (${COLUMNS.join(", ")}) VALUES (${placeholders}) RETURNING *`,
+      values,
     );
     return reply.code(201).send(mapTarget(rows[0]!));
   });
@@ -52,16 +64,17 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
     const parsed = TargetUpdateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
 
-    const allowed = [
-      "name", "host", "group_name", "interval_sec", "ping_count", "packet_size", "enabled",
-      "latency_threshold_ms", "alert_on_loss_pct", "traceroute_enabled", "traceroute_interval_sec",
-      "discord_webhook_url",
-    ] as const;
+    const patch = { ...parsed.data } as Record<string, unknown>;
+    // Switching an http/https probe on without a port keeps it usable.
+    if (typeof patch.type === "string" && !("port" in patch)) {
+      patch.port = defaultPort(patch.type as (typeof DEFAULTS)["type"]);
+    }
+
     const sets: string[] = [];
     const vals: unknown[] = [];
-    for (const key of allowed) {
-      if (key in parsed.data) {
-        vals.push((parsed.data as Record<string, unknown>)[key]);
+    for (const key of COLUMNS) {
+      if (key in patch) {
+        vals.push(patch[key]);
         sets.push(`${key} = $${vals.length}`);
       }
     }

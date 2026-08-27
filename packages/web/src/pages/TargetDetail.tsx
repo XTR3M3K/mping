@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Grid2x2, LineChart as LineIcon, Route, Activity, Settings as SettingsIcon } from "lucide-react";
 import { clsx } from "clsx";
 import type { SeriesResponse, SeriesPoint } from "@mping/shared";
+import { probeLabel } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { useUI } from "../state/ui.js";
 import { useLiveFeed } from "../lib/useLiveFeed.js";
@@ -12,6 +13,7 @@ import { OverlayChart } from "../components/OverlayChart.js";
 import { TracerouteTab } from "../components/TracerouteTab.js";
 import { Chip, EmptyState, Skeleton } from "../components/ui.js";
 import { fmtMs, fmtLoss, lossColor, collectorColor } from "../lib/format.js";
+import { probeAddress } from "../lib/probe.js";
 
 type Tab = "latency" | "traceroute";
 type LatencyView = "grid" | "overlay";
@@ -34,6 +36,7 @@ export function TargetDetail() {
       return api.series(targetId, to - rangeMs, to);
     },
     refetchInterval: live ? 20_000 : false,
+    placeholderData: keepPreviousData,
   });
 
   // Live tail: append median-only points as samples arrive.
@@ -75,9 +78,10 @@ export function TargetDetail() {
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             {target?.name ?? <Skeleton className="h-7 w-40" />}
           </h1>
-          <div className="text-sm text-faint font-mono mt-0.5">{target?.host}</div>
+          <div className="text-sm text-faint font-mono mt-0.5">{target && probeAddress(target)}</div>
         </div>
         <div className="flex items-center gap-2">
+          {target && <Chip tone={target.type === "ping" ? "neutral" : "accent"}>{probeLabel(target.type)}</Chip>}
           {target?.latency_threshold_ms != null && <Chip tone="accent">{`alert > ${target.latency_threshold_ms}ms`}</Chip>}
           {target?.alert_on_loss_pct != null && <Chip tone="warn">{`alert > ${target.alert_on_loss_pct}% loss`}</Chip>}
           <Link to="/settings" className="btn-ghost py-2"><SettingsIcon className="h-4 w-4" /></Link>

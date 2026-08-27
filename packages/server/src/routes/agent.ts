@@ -9,7 +9,7 @@ import {
 } from "@mping/shared";
 import { query, tx } from "../db.js";
 import { hashToken } from "../crypto.js";
-import { getTargetById, type TargetRow } from "../repo.js";
+import { getTargetById, mapTarget, type TargetRow } from "../repo.js";
 import { evaluateSampleAlerts, notifyRouteChange } from "../alerts.js";
 import { broadcast } from "../ws.js";
 
@@ -59,14 +59,20 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await query<TargetRow>(`SELECT * FROM targets WHERE enabled = true ORDER BY id`);
     const config: AgentConfig = {
       collector_id: collector.id,
-      targets: rows.map((r) => ({
-        id: r.id,
-        host: r.host,
-        interval_sec: r.interval_sec,
-        ping_count: r.ping_count,
-        packet_size: r.packet_size,
-        traceroute_enabled: r.traceroute_enabled,
-        traceroute_interval_sec: r.traceroute_interval_sec,
+      targets: rows.map(mapTarget).map((t) => ({
+        id: t.id,
+        host: t.host,
+        type: t.type,
+        interval_sec: t.interval_sec,
+        ping_count: t.ping_count,
+        packet_size: t.packet_size,
+        port: t.port,
+        http_path: t.http_path,
+        http_expect_status: t.http_expect_status,
+        verify_tls: t.verify_tls,
+        timeout_ms: t.timeout_ms,
+        traceroute_enabled: t.traceroute_enabled,
+        traceroute_interval_sec: t.traceroute_interval_sec,
       })),
     };
     return config;

@@ -4,15 +4,38 @@ import { summarize, type Sample } from "@mping/shared";
 
 const RTT_RE = /time[=<]\s*([\d.]+)\s*ms/gi;
 
+/** Seconds between echoes on Linux; macOS needs root to go below 1s. */
+const PING_GAP_SEC = 0.2;
+
+/** Seconds one cycle may take: the sends themselves plus a reply window. */
+function budgetSec(count: number, gapSec: number, timeoutMs: number): number {
+  return Math.ceil(count * gapSec + timeoutMs / 1000 + 2);
+}
+
 /** Build platform-appropriate ping args (no root needed; uses system ping). */
-function pingArgs(host: string, count: number, packetSize: number): string[] {
-  const isMac = platform() === "darwin";
-  if (isMac) {
-    // macOS: -i below 1s needs root; keep default interval. -s sets payload size.
-    return ["-c", String(count), "-t", "5", "-s", String(packetSize), host];
+function pingArgs(host: string, count: number, packetSize: number, timeoutMs: number): string[] {
+  if (platform() === "darwin") {
+    // macOS: -W is the per-reply wait in *milliseconds* and -t bounds the whole
+    // run in seconds — passing a per-reply timeout to -t cuts the cycle short
+    // and reports the unsent echoes as loss. Sub-second -i needs root.
+    return [
+      "-c", String(count),
+      "-W", String(timeoutMs),
+      "-t", String(budgetSec(count, 1, timeoutMs)),
+      "-s", String(packetSize),
+      host,
+    ];
   }
-  // Linux iputils: -i interval, -W per-reply timeout (s), -s payload size.
-  return ["-c", String(count), "-i", "0.2", "-W", "1", "-s", String(packetSize), host];
+  // Linux iputils: -i interval, -W per-reply timeout (whole seconds), -s payload.
+  const waitSec = Math.max(1, Math.round(timeoutMs / 1000));
+  return [
+    "-c", String(count),
+    "-i", String(PING_GAP_SEC),
+    "-W", String(waitSec),
+    "-w", String(budgetSec(count, PING_GAP_SEC, timeoutMs)),
+    "-s", String(packetSize),
+    host,
+  ];
 }
 
 /**
@@ -24,13 +47,16 @@ export function pingOnce(
   host: string,
   count: number,
   packetSize: number,
+  timeoutMs = 1000,
 ): Promise<Sample> {
   const startedAt = new Date();
+  const gapSec = platform() === "darwin" ? 1 : PING_GAP_SEC;
   return new Promise((resolve) => {
     execFile(
       "ping",
-      pingArgs(host, count, packetSize),
-      { timeout: (count + 10) * 1000, maxBuffer: 1024 * 1024 },
+      pingArgs(host, count, packetSize, timeoutMs),
+      // Backstop only: ping's own -t/-w should end the run well before this.
+      { timeout: (budgetSec(count, gapSec, timeoutMs) + 10) * 1000, maxBuffer: 1024 * 1024 },
       (_err, stdout) => {
         const rtts: number[] = [];
         let m: RegExpExecArray | null;

@@ -41,6 +41,21 @@ export const STATEMENTS: Stmt[] = [
       created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     )`,
   },
+  // Probe types beyond ICMP (tcp / http / https) — additive, so existing rows
+  // keep working as plain ping probes.
+  {
+    sql: `ALTER TABLE targets
+      ADD COLUMN IF NOT EXISTS port               INTEGER,
+      ADD COLUMN IF NOT EXISTS http_path          TEXT,
+      ADD COLUMN IF NOT EXISTS http_expect_status INTEGER,
+      ADD COLUMN IF NOT EXISTS verify_tls         BOOLEAN NOT NULL DEFAULT true,
+      ADD COLUMN IF NOT EXISTS timeout_ms         INTEGER NOT NULL DEFAULT 5000`,
+  },
+  {
+    sql: `ALTER TABLE targets
+      ADD CONSTRAINT targets_type_chk CHECK (type IN ('ping','tcp','http','https'))`,
+    ignoreIfContains: ["already exists"],
+  },
 
   {
     sql: `CREATE TABLE IF NOT EXISTS samples (
