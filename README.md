@@ -19,9 +19,10 @@ alerts**, and **traceroute change history**.
 - **Discord alerts** — pretty embeds when a probe's **median latency**
   or **packet loss** crosses a per-probe threshold (🔴 firing / 🟢 recovered), with a
   debounced state machine so it doesn't flap.
-- **Traceroute history** — agents trace the path; when the route changes a new
-  history entry is stored and a Discord embed shows the **before/after hop diff**.
-  The UI has a per-collector traceroute tab with an expandable change timeline.
+- **Traceroute history** — agents trace the path and resolve each hop's **origin AS**;
+  when the route changes a new history entry is stored and a Discord embed shows the
+  **before/after hop diff**. The UI has a per-collector traceroute tab where every
+  change expands into the **full path as it was then**, with the diff marked in place.
 - **Polished, responsive, dark** — works on desktop and phone, live-updating over
   WebSocket.
 

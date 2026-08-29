@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, GitBranch, Route as RouteIcon } from "lucide-react";
 import { clsx } from "clsx";
-import { diffRoutes, type Route, type TracerouteView } from "@mping/shared";
+import { mergeRoutes, shortAsName, type Hop, type MergedHop, type Route, type TracerouteView } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { EmptyState, Skeleton, Chip } from "./ui.js";
 import { fmtMs, fmtRelTime, fmtClock, collectorColor } from "../lib/format.js";
@@ -60,7 +60,7 @@ export function TracerouteTab({ targetId }: { targetId: number }) {
       {isLoading || !view ? (
         <Skeleton className="h-72 rounded-2xl" />
       ) : (
-        <div className="grid lg:grid-cols-2 gap-5">
+        <div className="grid xl:grid-cols-2 gap-5 items-start">
           <CurrentRoute view={view} />
           <ChangeHistory view={view} />
         </div>
@@ -81,45 +81,120 @@ function CurrentRoute({ view }: { view: TracerouteView }) {
       {!view.current ? (
         <p className="text-sm text-faint py-8 text-center">No route recorded yet.</p>
       ) : (
-        <HopTable hops={view.current.hops} />
+        <HopTable rows={mergeRoutes(null, view.current.hops)} />
       )}
     </div>
   );
 }
 
-function HopTable({ hops }: { hops: Route }) {
+const ROW_TONE: Record<MergedHop["change"], string> = {
+  same: "",
+  added: "bg-good/10",
+  removed: "bg-bad/10",
+  changed: "bg-warn/10",
+};
+
+const MARKER: Record<MergedHop["change"], { sign: string; className: string }> = {
+  same: { sign: "", className: "text-faint" },
+  added: { sign: "+", className: "text-good" },
+  removed: { sign: "−", className: "text-bad" },
+  changed: { sign: "~", className: "text-warn" },
+};
+
+/**
+ * One table for both the live path and a historical change: every row is a TTL,
+ * annotated with how it differs from the previous route. Showing the diff in
+ * place means a change can be read as a whole traceroute, not as a few
+ * disconnected lines.
+ */
+function HopTable({ rows, diff = false }: { rows: MergedHop[]; diff?: boolean }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border/60">
+    <div className="overflow-x-auto rounded-xl border border-border/60">
       <table className="w-full text-sm">
         <thead className="bg-surface-2 text-faint text-xs uppercase tracking-wide">
           <tr>
             <th className="text-left font-medium px-3 py-2 w-10">#</th>
             <th className="text-left font-medium px-3 py-2">Hop</th>
+            <th className="text-left font-medium px-3 py-2 w-44">ASN</th>
             <th className="text-right font-medium px-3 py-2 w-20">RTT</th>
             <th className="text-right font-medium px-3 py-2 w-16">Loss</th>
           </tr>
         </thead>
         <tbody>
-          {hops.map((h, i) => (
-            <tr key={`${h.ttl}-${i}`} className="border-t border-border/40">
-              <td className="px-3 py-1.5 font-mono text-faint">{h.ttl}</td>
-              <td className="px-3 py-1.5 font-mono">
-                {h.ip ?? <span className="text-faint">* * *</span>}
-                {h.host && h.host !== h.ip && <span className="text-faint"> ({h.host})</span>}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono text-muted">{fmtMs(h.rtt_ms)}</td>
-              <td className="px-3 py-1.5 text-right font-mono">
-                {h.loss_pct != null && h.loss_pct > 0 ? (
-                  <span className="text-bad">{h.loss_pct.toFixed(0)}%</span>
-                ) : (
-                  <span className="text-faint">0%</span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const shown = row.hop ?? row.before;
+            const marker = MARKER[row.change];
+            return (
+              <tr key={row.ttl} className={clsx("border-t border-border/40", ROW_TONE[row.change])}>
+                <td className="px-3 py-1.5 font-mono text-faint whitespace-nowrap">
+                  {diff && marker.sign && <span className={clsx("mr-1", marker.className)}>{marker.sign}</span>}
+                  {row.ttl}
+                </td>
+                <td className="px-3 py-1.5 font-mono">
+                  <HopAddress row={row} />
+                </td>
+                <td className="px-3 py-1.5">
+                  <AsnCell row={row} />
+                </td>
+                <td className="px-3 py-1.5 text-right font-mono text-muted whitespace-nowrap">
+                  {row.change === "removed" ? "—" : fmtMs(shown?.rtt_ms)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-mono whitespace-nowrap">
+                  {row.change === "removed" ? (
+                    <span className="text-faint">—</span>
+                  ) : shown?.loss_pct != null && shown.loss_pct > 0 ? (
+                    <span className="text-bad">{shown.loss_pct.toFixed(0)}%</span>
+                  ) : (
+                    <span className="text-faint">0%</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function address(h: Hop): string {
+  return h.ip ?? "* * *";
+}
+
+function HopAddress({ row }: { row: MergedHop }) {
+  const { hop, before, change } = row;
+  if (change === "removed" && before) {
+    return <span className="text-bad line-through">{address(before)}</span>;
+  }
+  if (!hop) return <span className="text-faint">* * *</span>;
+  return (
+    <>
+      {change === "changed" && before && (
+        <>
+          <span className="text-bad line-through">{address(before)}</span>
+          <span className="text-faint mx-1.5">→</span>
+        </>
+      )}
+      <span className={clsx(!hop.ip && "text-faint", change === "changed" && "text-good")}>{address(hop)}</span>
+      {hop.host && hop.host !== hop.ip && <span className="text-faint"> ({hop.host})</span>}
+    </>
+  );
+}
+
+function AsnCell({ row }: { row: MergedHop }) {
+  const hop = row.change === "removed" ? row.before : row.hop;
+  if (!hop?.asn) return <span className="text-faint text-xs">—</span>;
+  const name = shortAsName(hop.as_name);
+  // The AS can change even when the IP doesn't — worth flagging on a diff row.
+  const moved = row.before?.asn != null && row.hop?.asn != null && row.before.asn !== row.hop.asn;
+  return (
+    <span
+      className={clsx("text-xs whitespace-nowrap", row.change === "removed" && "line-through")}
+      title={hop.as_name ?? undefined}
+    >
+      <span className={clsx("font-mono", moved ? "text-warn" : "text-muted")}>AS{hop.asn}</span>
+      {name && <span className="text-faint ml-1.5">{name}</span>}
+    </span>
   );
 }
 
@@ -135,19 +210,16 @@ function ChangeHistory({ view }: { view: TracerouteView }) {
         <p className="text-sm text-faint py-8 text-center">No changes recorded. The path has been stable.</p>
       ) : (
         <div className="space-y-2">
-          {history.map((entry, i) => {
-            // The previous route is the next-older history entry.
-            const prev = history[i + 1]?.hops ?? null;
-            return (
-              <HistoryItem
-                key={entry.id}
-                changedAt={entry.changed_at}
-                hops={entry.hops}
-                prev={prev}
-                isInitial={entry.prev_hash == null}
-              />
-            );
-          })}
+          {history.map((entry, i) => (
+            <HistoryItem
+              key={entry.id}
+              changedAt={entry.changed_at}
+              hops={entry.hops}
+              // The previous route is the next-older history entry.
+              prev={history[i + 1]?.hops ?? null}
+              isInitial={entry.prev_hash == null}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -166,8 +238,16 @@ function HistoryItem({
   isInitial: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const diff = prev ? diffRoutes(prev, hops) : { added: [], removed: [], changed: [] };
-  const changeCount = diff.added.length + diff.removed.length + diff.changed.length;
+  const [onlyChanges, setOnlyChanges] = useState(false);
+
+  const rows = mergeRoutes(isInitial ? null : prev, hops);
+  const changedRows = rows.filter((r) => r.change !== "same");
+  const counts = {
+    added: changedRows.filter((r) => r.change === "added").length,
+    removed: changedRows.filter((r) => r.change === "removed").length,
+    changed: changedRows.filter((r) => r.change === "changed").length,
+  };
+  const hasDiff = changedRows.length > 0;
 
   return (
     <div className="rounded-xl border border-border/60 bg-surface-2/50 overflow-hidden">
@@ -179,7 +259,9 @@ function HistoryItem({
           <span className={clsx("h-2 w-2 rounded-full shrink-0", isInitial ? "bg-accent" : "bg-warn")} />
           <div className="min-w-0">
             <div className="text-sm font-medium">{fmtClock(changedAt)}</div>
-            <div className="text-xs text-faint">{fmtRelTime(changedAt)}</div>
+            <div className="text-xs text-faint">
+              {fmtRelTime(changedAt)} · {hops.length} hops
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -187,38 +269,45 @@ function HistoryItem({
             <Chip tone="accent">first seen</Chip>
           ) : (
             <>
-              {diff.added.length > 0 && <Chip tone="good">+{diff.added.length}</Chip>}
-              {diff.removed.length > 0 && <Chip tone="bad">−{diff.removed.length}</Chip>}
-              {diff.changed.length > 0 && <Chip tone="warn">~{diff.changed.length}</Chip>}
+              {counts.added > 0 && <Chip tone="good">+{counts.added}</Chip>}
+              {counts.removed > 0 && <Chip tone="bad">−{counts.removed}</Chip>}
+              {counts.changed > 0 && <Chip tone="warn">~{counts.changed}</Chip>}
             </>
           )}
           <ChevronDown className={clsx("h-4 w-4 text-faint transition-transform", open && "rotate-180")} />
         </div>
       </button>
+
       {open && (
-        <div className="px-3 pb-3 pt-1 border-t border-border/40 space-y-1.5 text-sm font-mono">
-          {isInitial || changeCount === 0 ? (
-            <HopTable hops={hops} />
-          ) : (
-            <>
-              {diff.changed.map((c) => (
-                <div key={`c${c.ttl}`} className="flex flex-wrap items-center gap-2">
-                  <span className="text-faint w-8">ttl {c.ttl}</span>
-                  <span className="text-bad line-through">{c.from?.ip ?? "*"}</span>
-                  <span className="text-faint">→</span>
-                  <span className="text-good">{c.to?.ip ?? "*"}</span>
-                </div>
-              ))}
-              {diff.added.map((h) => (
-                <div key={`a${h.ttl}`} className="text-good">+ ttl {h.ttl}: {h.ip ?? "*"} {h.rtt_ms != null && `(${fmtMs(h.rtt_ms)})`}</div>
-              ))}
-              {diff.removed.map((h) => (
-                <div key={`r${h.ttl}`} className="text-bad">− ttl {h.ttl}: {h.ip ?? "*"}</div>
-              ))}
-            </>
+        <div className="px-3 pb-3 pt-3 border-t border-border/40 space-y-2">
+          {hasDiff && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-faint">
+                Full path as recorded at this change{prev && !isInitial ? ", diffed against the previous one" : ""}.
+              </span>
+              <div className="flex items-center gap-1 bg-surface-2 rounded-lg p-0.5 border border-border shrink-0">
+                <ScopeBtn active={!onlyChanges} onClick={() => setOnlyChanges(false)}>Full path</ScopeBtn>
+                <ScopeBtn active={onlyChanges} onClick={() => setOnlyChanges(true)}>Changes</ScopeBtn>
+              </div>
+            </div>
           )}
+          <HopTable rows={onlyChanges ? changedRows : rows} diff={hasDiff} />
         </div>
       )}
     </div>
+  );
+}
+
+function ScopeBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "px-2 py-0.5 rounded-md text-xs font-medium transition-colors",
+        active ? "bg-accent text-white" : "text-muted hover:text-gray-200",
+      )}
+    >
+      {children}
+    </button>
   );
 }

@@ -1,5 +1,5 @@
 import { BAND_PERCENTILES } from "./sample.js";
-import type { Hop, Route } from "./traceroute.js";
+import type { Hop, MergedHop, Route } from "./traceroute.js";
 
 /** Linear-interpolated percentile of a sorted ascending array. */
 export function percentile(sorted: number[], p: number): number | null {
@@ -72,6 +72,30 @@ export function diffRoutes(prev: Route, next: Route) {
     else if (p && n && (p.ip ?? "*") !== (n.ip ?? "*")) changed.push({ ttl, from: p, to: n });
   }
   return { added, removed, changed };
+}
+
+/**
+ * The whole path of `next`, annotated with how each TTL differs from `prev` —
+ * what a route-change entry needs to be readable: the diff in place, inside the
+ * full traceroute rather than as a handful of orphaned lines. TTLs that
+ * disappeared are kept in position so the two paths stay aligned.
+ */
+export function mergeRoutes(prev: Route | null, next: Route): MergedHop[] {
+  const prevByTtl = new Map(prev?.map((h) => [h.ttl, h]) ?? []);
+  const nextByTtl = new Map(next.map((h) => [h.ttl, h]));
+  const ttls = [...new Set([...prevByTtl.keys(), ...nextByTtl.keys()])].sort((a, b) => a - b);
+
+  return ttls.map((ttl) => {
+    const before = prevByTtl.get(ttl) ?? null;
+    const hop = nextByTtl.get(ttl) ?? null;
+    let change: MergedHop["change"] = "same";
+    if (prev) {
+      if (before && !hop) change = "removed";
+      else if (!before && hop) change = "added";
+      else if (before && hop && (before.ip ?? "*") !== (hop.ip ?? "*")) change = "changed";
+    }
+    return { ttl, change, hop, before };
+  });
 }
 
 /**

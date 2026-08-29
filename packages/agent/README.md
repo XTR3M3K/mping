@@ -37,6 +37,9 @@ one burst.
 - `mtr` (preferred) or `traceroute` for route tracing. `mtr` gives per-hop loss.
   `mtr` needs raw-socket capability: it's usually setuid, or grant it with
   `setcap cap_net_raw+ep $(which mtr)`.
+- Outbound DNS for hop annotation: reverse lookups, plus TXT queries against
+  Team Cymru's `origin.asn.cymru.com` / `asn.cymru.com` zones for the origin AS.
+  A resolver that blocks them just leaves the ASN column empty.
 
 ## Docker
 
