@@ -115,7 +115,7 @@ function HopTable({ rows, diff = false }: { rows: MergedHop[]; diff?: boolean })
           <tr>
             <th className="text-left font-medium px-3 py-2 w-10">#</th>
             <th className="text-left font-medium px-3 py-2">Hop</th>
-            <th className="text-left font-medium px-3 py-2 w-44">ASN</th>
+            <th className="text-left font-medium px-3 py-2">ASN</th>
             <th className="text-right font-medium px-3 py-2 w-20">RTT</th>
             <th className="text-right font-medium px-3 py-2 w-16">Loss</th>
           </tr>
@@ -130,6 +130,8 @@ function HopTable({ rows, diff = false }: { rows: MergedHop[]; diff?: boolean })
                   {diff && marker.sign && <span className={clsx("mr-1", marker.className)}>{marker.sign}</span>}
                   {row.ttl}
                 </td>
+                {/* No nowrap here: an "old → new" pair is the widest thing in
+                    the table and must be allowed to wrap inside a narrow card. */}
                 <td className="px-3 py-1.5 font-mono">
                   <HopAddress row={row} />
                 </td>
@@ -188,13 +190,15 @@ function AsnCell({ row }: { row: MergedHop }) {
   // The AS can change even when the IP doesn't — worth flagging on a diff row.
   const moved = row.before?.asn != null && row.hop?.asn != null && row.before.asn !== row.hop.asn;
   return (
-    <span
-      className={clsx("text-xs whitespace-nowrap", row.change === "removed" && "line-through")}
+    // Name under the number, like the hop's reverse-DNS sits under its IP: the
+    // cell can then shrink, which keeps RTT and Loss on screen in a narrow card.
+    <div
+      className={clsx("text-xs leading-tight", row.change === "removed" && "line-through")}
       title={hop.as_name ?? undefined}
     >
-      <span className={clsx("font-mono", moved ? "text-warn" : "text-muted")}>AS{hop.asn}</span>
-      {name && <span className="text-faint ml-1.5">{name}</span>}
-    </span>
+      <div className={clsx("font-mono", moved ? "text-warn" : "text-muted")}>AS{hop.asn}</div>
+      {name && <div className="text-faint truncate max-w-[9rem]">{name}</div>}
+    </div>
   );
 }
 
