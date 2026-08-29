@@ -63,9 +63,10 @@ export const api = {
   deleteCollector: (id: number) => req<void>(`/collectors/${id}`, { method: "DELETE" }),
 
   // series + traceroute
-  series: (id: number, from: number, to: number, collectorIds?: number[]) => {
+  series: (id: number, from: number, to: number, collectorIds?: number[], res?: "raw" | "5m" | "1h") => {
     const p = new URLSearchParams({ from: String(from), to: String(to) });
     if (collectorIds?.length) p.set("collectorIds", collectorIds.join(","));
+    if (res) p.set("res", res);
     return req<SeriesResponse>(`/targets/${id}/series?${p}`);
   },
   /** One request for the whole dashboard grid instead of one per card. */
@@ -79,6 +80,12 @@ export const api = {
   },
   traceroute: (id: number, collectorId: number) =>
     req<TracerouteView>(`/targets/${id}/traceroute?collectorId=${collectorId}`),
+  /** Ask collectors to trace this target right away. */
+  runTraceroute: (id: number, collectorId?: number) =>
+    req<{ queued: number }>(
+      `/targets/${id}/traceroute/run${collectorId != null ? `?collectorId=${collectorId}` : ""}`,
+      { method: "POST" },
+    ),
   tracerouteCollectors: (id: number) =>
     req<{ collector_id: number; name: string; run_at: string }[]>(
       `/targets/${id}/traceroute/collectors`,

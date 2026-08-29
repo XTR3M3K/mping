@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Grid2x2, LineChart as LineIcon, Route, Activity, Settings as SettingsIcon } from "lucide-react";
+import {
+  ChevronLeft, Grid2x2, LineChart as LineIcon, Radio, Route, Activity, Settings as SettingsIcon,
+} from "lucide-react";
 import { clsx } from "clsx";
 import type { SeriesResponse, SeriesPoint } from "@mping/shared";
 import { probeLabel } from "@mping/shared";
@@ -11,11 +13,12 @@ import { useLiveFeed } from "../lib/useLiveFeed.js";
 import { SmokeChart } from "../components/SmokeChart.js";
 import { OverlayChart } from "../components/OverlayChart.js";
 import { TracerouteTab } from "../components/TracerouteTab.js";
+import { LiveTab } from "../components/LiveTab.js";
 import { Chip, EmptyState, Skeleton } from "../components/ui.js";
 import { fmtMs, fmtLoss, lossColor, collectorColor } from "../lib/format.js";
 import { probeAddress } from "../lib/probe.js";
 
-type Tab = "latency" | "traceroute";
+type Tab = "latency" | "live" | "traceroute";
 type LatencyView = "grid" | "overlay";
 
 export function TargetDetail() {
@@ -93,6 +96,9 @@ export function TargetDetail() {
         <TabBtn active={tab === "latency"} onClick={() => setTab("latency")} icon={<Activity className="h-4 w-4" />}>
           Latency
         </TabBtn>
+        <TabBtn active={tab === "live"} onClick={() => setTab("live")} icon={<Radio className="h-4 w-4" />}>
+          Live
+        </TabBtn>
         <TabBtn active={tab === "traceroute"} onClick={() => setTab("traceroute")} icon={<Route className="h-4 w-4" />}>
           Traceroute
         </TabBtn>
@@ -165,6 +171,8 @@ export function TargetDetail() {
           )}
         </>
       )}
+
+      {tab === "live" && target && <LiveTab target={target} />}
 
       {tab === "traceroute" && target && <TracerouteTab targetId={targetId} />}
     </div>

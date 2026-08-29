@@ -101,6 +101,24 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return config;
   });
 
+  // Claim any one-shot instructions queued for this collector. Anything older
+  // than two minutes is dropped rather than run late — "trace now" means now.
+  app.get("/api/agent/commands", async (req, reply) => {
+    const collector = await authCollector(req, reply);
+    if (!collector) return;
+    const { rows } = await query<{ id: number; kind: string; target_id: number }>(
+      `UPDATE agent_commands SET claimed_at = now()
+       WHERE id IN (
+         SELECT id FROM agent_commands
+         WHERE collector_id = $1 AND claimed_at IS NULL AND created_at > now() - interval '2 minutes'
+         ORDER BY created_at LIMIT 20 FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id, kind, target_id`,
+      [collector.id],
+    );
+    return { commands: rows };
+  });
+
   // Push a batch of samples. Samples for targets that no longer exist are
   // dropped with a 2xx on purpose: rejecting the batch used to wedge the
   // agent's buffer, so one deleted probe stalled every other probe's history.
@@ -135,6 +153,8 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         t: new Date(s.time).getTime(),
         median_ms: s.median_ms,
         loss_pct: s.loss_pct,
+        min_ms: s.min_ms,
+        max_ms: s.max_ms,
       });
       await evaluateSampleAlerts(targets.get(s.target_id)!, collector.id, collector.name, s).catch((e) =>
         req.log.error(e, "alert eval failed"),
@@ -179,6 +199,13 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         [target_id, collector.id, run_at, hash, last?.route_hash ?? null, JSON.stringify(hops)],
       );
       return { prev: (last?.hops as typeof hops) ?? [], next: hops, isFirst: !last };
+    });
+
+    broadcast({
+      type: "traceroute",
+      target_id,
+      collector_id: collector.id,
+      changed: changeInfo !== null,
     });
 
     if (changeInfo && !changeInfo.isFirst) {

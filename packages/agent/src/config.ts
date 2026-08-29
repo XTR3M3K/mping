@@ -14,6 +14,8 @@ export interface AgentConfig {
   name: string;
   /** How often to re-pull the target list from the server (seconds). */
   configRefreshSec: number;
+  /** How often to claim one-shot instructions (e.g. "traceroute now"). */
+  commandPollSec: number;
   /** Upper bound on probe cycles running at the same instant. */
   maxConcurrentProbes: number;
   /** Traceroutes are far heavier than a probe, so they get their own budget. */
@@ -33,6 +35,7 @@ export function loadConfig(): AgentConfig {
     token,
     name,
     configRefreshSec: num(process.env.MPING_CONFIG_REFRESH_SEC, 30),
+    commandPollSec: num(process.env.MPING_COMMAND_POLL_SEC, 5),
     maxConcurrentProbes: num(process.env.MPING_MAX_CONCURRENT_PROBES, 32),
     maxConcurrentTraceroutes: num(process.env.MPING_MAX_CONCURRENT_TRACEROUTES, 4),
   };

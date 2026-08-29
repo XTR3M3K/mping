@@ -46,6 +46,21 @@ export const TracerouteViewSchema = z.object({
 });
 export type TracerouteView = z.infer<typeof TracerouteViewSchema>;
 
+/**
+ * A one-shot instruction for a collector, claimed on its next poll. Only used
+ * to make "trace this path right now" possible from the UI — everything else
+ * the agent needs it pulls as config.
+ */
+export const AgentCommandSchema = z.object({
+  id: z.number().int(),
+  kind: z.literal("traceroute"),
+  target_id: z.number().int(),
+});
+export type AgentCommand = z.infer<typeof AgentCommandSchema>;
+
+export const AgentCommandsSchema = z.object({ commands: z.array(AgentCommandSchema) });
+export type AgentCommands = z.infer<typeof AgentCommandsSchema>;
+
 export const SettingsSchema = z.object({
   discord_webhook_url: z.string().url().nullable(),
   default_latency_threshold_ms: z.number().min(0).nullable(),
@@ -65,7 +80,17 @@ export const WsMessageSchema = z.discriminatedUnion("type", [
     t: z.number(),
     median_ms: z.number().nullable(),
     loss_pct: z.number(),
+    // Defaulted so a live view keeps working against an older server.
+    min_ms: z.number().nullable().default(null),
+    max_ms: z.number().nullable().default(null),
   }),
   z.object({ type: z.literal("alert"), target_id: z.number().int() }),
+  z.object({
+    type: z.literal("traceroute"),
+    target_id: z.number().int(),
+    collector_id: z.number().int(),
+    /** Whether this run differed from the previous one. */
+    changed: z.boolean(),
+  }),
 ]);
 export type WsMessage = z.infer<typeof WsMessageSchema>;

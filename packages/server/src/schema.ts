@@ -148,6 +148,23 @@ export const STATEMENTS: Stmt[] = [
     sql: `CREATE INDEX IF NOT EXISTS alert_events_created_idx ON alert_events (created_at DESC)`,
   },
 
+  // One-shot collector instructions (currently only "traceroute now"), claimed
+  // by the agent on its next poll and dropped once stale.
+  {
+    sql: `CREATE TABLE IF NOT EXISTS agent_commands (
+      id           BIGSERIAL PRIMARY KEY,
+      collector_id INTEGER NOT NULL REFERENCES collectors(id) ON DELETE CASCADE,
+      target_id    INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
+      kind         TEXT NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      claimed_at   TIMESTAMPTZ
+    )`,
+  },
+  {
+    sql: `CREATE INDEX IF NOT EXISTS agent_commands_pending_idx
+          ON agent_commands (collector_id, claimed_at) WHERE claimed_at IS NULL`,
+  },
+
   {
     sql: `CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,

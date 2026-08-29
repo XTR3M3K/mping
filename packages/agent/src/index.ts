@@ -99,6 +99,12 @@ class TargetRunner {
     }
   }
 
+  /** Trace right now, outside the normal cadence (a UI "run now" request). */
+  async traceNow(): Promise<void> {
+    if (this.stopped) return;
+    await traceLimiter.run(() => this.trace());
+  }
+
   private async trace(): Promise<void> {
     const t = this.target;
     try {
@@ -142,6 +148,26 @@ function reconcile(targets: AgentTarget[]): void {
   }
 }
 
+/**
+ * Claim queued instructions. Kept separate from the config poll because it runs
+ * far more often — it is what makes the UI's "trace now" button feel immediate.
+ */
+async function commandLoop(): Promise<void> {
+  for (;;) {
+    try {
+      for (const cmd of await client.fetchCommands()) {
+        const runner = runners.get(cmd.target_id);
+        if (!runner) continue;
+        console.log(`! traceroute now for target ${cmd.target_id}`);
+        void runner.traceNow();
+      }
+    } catch (err) {
+      console.warn(`[commands] ${(err as Error).message}`);
+    }
+    await sleep(cfg.commandPollSec * 1000);
+  }
+}
+
 async function configLoop(): Promise<void> {
   for (;;) {
     try {
@@ -170,6 +196,7 @@ async function main(): Promise<void> {
     }
   }
   void flushLoop();
+  void commandLoop();
   await configLoop();
 }
 

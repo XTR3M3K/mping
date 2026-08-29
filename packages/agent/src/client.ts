@@ -1,4 +1,11 @@
-import { AgentConfigSchema, type AgentConfig, type Sample, type Route } from "@mping/shared";
+import {
+  AgentCommandsSchema,
+  AgentConfigSchema,
+  type AgentCommand,
+  type AgentConfig,
+  type Route,
+  type Sample,
+} from "@mping/shared";
 import type { AgentConfig as RuntimeConfig } from "./config.js";
 
 /** Carries the status code so callers can tell "retry later" from "give up". */
@@ -39,6 +46,13 @@ export class ServerClient {
     const res = await fetch(`${this.cfg.server}/api/agent/config`, { headers: this.headers() });
     if (!res.ok) throw new HttpError(res.status, `config fetch failed: ${res.status}`);
     return AgentConfigSchema.parse(await res.json());
+  }
+
+  /** Claim any one-shot instructions the server has queued for us. */
+  async fetchCommands(): Promise<AgentCommand[]> {
+    const res = await fetch(`${this.cfg.server}/api/agent/commands`, { headers: this.headers() });
+    if (!res.ok) throw new HttpError(res.status, `command fetch failed: ${res.status}`);
+    return AgentCommandsSchema.parse(await res.json()).commands;
   }
 
   async pushSamples(samples: Sample[]): Promise<void> {

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Route, TracerouteHistoryEntry, TracerouteView } from "@mping/shared";
 import { query } from "../db.js";
+import { env } from "../env.js";
 import { requireAuth } from "./auth.js";
 
 export async function tracerouteRoutes(app: FastifyInstance): Promise<void> {
@@ -44,6 +45,32 @@ export async function tracerouteRoutes(app: FastifyInstance): Promise<void> {
       ),
     };
     return view;
+  });
+
+  /**
+   * Ask collectors to trace this target immediately. They pick the request up
+   * on their next command poll (seconds), which is what makes the live view
+   * feel live instead of waiting out the probe's traceroute interval.
+   */
+  app.post("/api/targets/:id/traceroute/run", async (req, reply) => {
+    const targetId = Number((req.params as { id: string }).id);
+    const q = req.query as { collectorId?: string };
+    const collectorId = q.collectorId ? Number(q.collectorId) : null;
+    if (collectorId != null && !Number.isInteger(collectorId)) {
+      return reply.code(400).send({ error: "invalid collectorId" });
+    }
+
+    const { rows } = await query<{ id: number }>(
+      `INSERT INTO agent_commands (collector_id, target_id, kind)
+       SELECT c.id, t.id, 'traceroute'
+       FROM collectors c
+       JOIN targets t ON t.id = $1
+       WHERE ($2::int IS NULL OR c.id = $2)
+         AND c.last_seen_at > now() - ($3 || ' seconds')::interval
+       RETURNING id`,
+      [targetId, collectorId, String(env.collectorOnlineWindowSec)],
+    );
+    return { queued: rows.length };
   });
 
   // Which collectors have traceroute data for this target (for the tab's selector).
