@@ -21,8 +21,12 @@ alerts**, and **traceroute change history**.
   debounced state machine so it doesn't flap.
 - **Traceroute history** — agents trace the path and resolve each hop's **origin AS**;
   when the route changes a new history entry is stored and a Discord embed shows the
-  **before/after hop diff**. The UI has a per-collector traceroute tab where every
-  change expands into the **full path as it was then**, with the diff marked in place.
+  **before/after hop diff**. The traceroute tab puts the current path next to a
+  **historical one you scrub through on a timeline**, showing the full path as it was
+  then with the diff marked in place.
+- **Live mode** — a per-probe view where samples land on the chart as collectors
+  report them (over the WebSocket, no polling) and the path below can be
+  **re-traced on demand** instead of waiting out the probe's traceroute interval.
 - **Polished, responsive, dark** — works on desktop and phone, live-updating over
   WebSocket.
 
@@ -133,8 +137,8 @@ Server env (`.env`):
 | `PG_POOL_MAX` | `20` | Postgres connections; raise it for a large collector fleet |
 
 Agent env (see [`packages/agent/README.md`](packages/agent/README.md)) additionally
-takes `MPING_CONFIG_REFRESH_SEC` (30), `MPING_MAX_CONCURRENT_PROBES` (32) and
-`MPING_MAX_CONCURRENT_TRACEROUTES` (4).
+takes `MPING_CONFIG_REFRESH_SEC` (30), `MPING_COMMAND_POLL_SEC` (5),
+`MPING_MAX_CONCURRENT_PROBES` (32) and `MPING_MAX_CONCURRENT_TRACEROUTES` (4).
 
 Discord webhook + default thresholds + alert debounce are set in **Settings**;
 per-probe thresholds and webhook overrides are set on each probe.

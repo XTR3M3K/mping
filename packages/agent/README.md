@@ -23,6 +23,7 @@ agent with that token. The `--name` must match the collector name you created.
 | var | default | purpose |
 |---|---|---|
 | `MPING_CONFIG_REFRESH_SEC` | `30` | how often the target list is re-pulled |
+| `MPING_COMMAND_POLL_SEC` | `5` | how often to claim "traceroute now" requests from the UI |
 | `MPING_MAX_CONCURRENT_PROBES` | `32` | probe cycles allowed to run at once |
 | `MPING_MAX_CONCURRENT_TRACEROUTES` | `4` | traceroutes allowed to run at once |
 
