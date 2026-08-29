@@ -89,8 +89,10 @@ function PathPanes({ view }: { view: TracerouteView }) {
     return i >= 0 ? i : 0;
   }, [history, selectedId]);
 
+  // Stacked, not side by side: both are hop tables of the same path, and
+  // reading one under the other beats comparing across a gutter.
   return (
-    <div className="grid xl:grid-cols-2 gap-5 items-start">
+    <div className="space-y-5">
       <CurrentRoute view={view} />
       <HistoricalPath
         history={history}
