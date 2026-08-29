@@ -165,6 +165,16 @@ export const STATEMENTS: Stmt[] = [
           ON agent_commands (collector_id, claimed_at) WHERE claimed_at IS NULL`,
   },
 
+  // Targets somebody is watching live, so collectors probe them faster for as
+  // long as a browser keeps the row renewed.
+  {
+    sql: `CREATE TABLE IF NOT EXISTS live_watches (
+      target_id    INTEGER PRIMARY KEY REFERENCES targets(id) ON DELETE CASCADE,
+      interval_sec INTEGER NOT NULL,
+      until        TIMESTAMPTZ NOT NULL
+    )`,
+  },
+
   {
     sql: `CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,

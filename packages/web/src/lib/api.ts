@@ -50,6 +50,12 @@ export const api = {
   updateTarget: (id: number, body: TargetUpdate) =>
     req<Target>(`/targets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteTarget: (id: number) => req<void>(`/targets/${id}`, { method: "DELETE" }),
+  /** Renew a live watch so collectors probe this target faster while watched. */
+  keepLive: (id: number, interval_sec: number) =>
+    req<{ interval_sec: number; ttl_sec: number }>(`/targets/${id}/live`, {
+      method: "POST",
+      body: JSON.stringify({ interval_sec }),
+    }),
 
   // collectors
   listCollectors: () => req<Collector[]>("/collectors"),

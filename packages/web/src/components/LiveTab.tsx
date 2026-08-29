@@ -16,6 +16,11 @@ const WINDOWS = [
   { key: "1h", ms: 60 * 60_000 },
 ];
 
+/** Probe cadences the live view may ask collectors for. */
+const RATES = [5, 10];
+/** Renew well inside the server's watch TTL so a slow request can't drop it. */
+const KEEPALIVE_MS = 10_000;
+
 interface LiveSeries {
   collector_id: number;
   collector_name: string;
@@ -31,6 +36,7 @@ interface LiveSeries {
  */
 export function LiveTab({ target }: { target: Target }) {
   const [windowMs, setWindowMs] = useState(WINDOWS[0]!.ms);
+  const [rateSec, setRateSec] = useState(RATES[0]!);
   const [series, setSeries] = useState<Map<number, LiveSeries>>(new Map());
   const [now, setNow] = useState(() => Date.now());
   const [lastTrace, setLastTrace] = useState<{ collector_id: number; changed: boolean; at: number } | null>(null);
@@ -95,6 +101,24 @@ export function LiveTab({ target }: { target: Target }) {
     ),
   );
 
+  // Hold a live watch open: collectors probe this target every `rateSec` while
+  // the tab is on screen, and the watch lapses on its own once we stop asking.
+  useEffect(() => {
+    if (target.interval_sec <= rateSec) return; // already at least this fast
+    let cancelled = false;
+    const ping = () => {
+      api.keepLive(target.id, rateSec).catch(() => undefined);
+    };
+    ping();
+    const id = setInterval(() => {
+      if (!cancelled) ping();
+    }, KEEPALIVE_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [target.id, target.interval_sec, rateSec]);
+
   // Scroll the axis even while nothing arrives, and drop what fell out of it.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -115,21 +139,25 @@ export function LiveTab({ target }: { target: Target }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-muted">
           <Radio className="h-4 w-4 text-good animate-pulse" />
-          Streaming samples as collectors report them
+          {target.interval_sec <= rateSec
+            ? `Streaming samples — this probe already runs every ${target.interval_sec}s`
+            : `Probing every ${rateSec}s while this tab is open, instead of ${target.interval_sec}s`}
         </div>
-        <div className="flex items-center gap-1 bg-surface-2 rounded-xl p-1 border border-border">
-          {WINDOWS.map((w) => (
-            <button
-              key={w.key}
-              onClick={() => setWindowMs(w.ms)}
-              className={clsx(
-                "px-2.5 py-1 rounded-lg text-sm font-medium transition-colors",
-                windowMs === w.ms ? "bg-accent text-white" : "text-muted hover:text-gray-200",
-              )}
-            >
-              {w.key}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          {target.interval_sec > RATES[0]! && (
+            <Segmented
+              options={RATES.map((r) => ({ key: `${r}s`, value: r }))}
+              value={rateSec}
+              onChange={setRateSec}
+              title="How often collectors probe while you watch"
+            />
+          )}
+          <Segmented
+            options={WINDOWS.map((w) => ({ key: w.key, value: w.ms }))}
+            value={windowMs}
+            onChange={setWindowMs}
+            title="How much history the chart shows"
+          />
         </div>
       </div>
 
@@ -152,6 +180,35 @@ export function LiveTab({ target }: { target: Target }) {
       )}
 
       <LiveTraceroute target={target} lastTrace={lastTrace} />
+    </div>
+  );
+}
+
+function Segmented<T extends number>({
+  options,
+  value,
+  onChange,
+  title,
+}: {
+  options: { key: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-surface-2 rounded-xl p-1 border border-border" title={title}>
+      {options.map((o) => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.value)}
+          className={clsx(
+            "px-2.5 py-1 rounded-lg text-sm font-medium transition-colors",
+            value === o.value ? "bg-accent text-white" : "text-muted hover:text-gray-200",
+          )}
+        >
+          {o.key}
+        </button>
+      ))}
     </div>
   );
 }

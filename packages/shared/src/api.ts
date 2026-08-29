@@ -58,8 +58,29 @@ export const AgentCommandSchema = z.object({
 });
 export type AgentCommand = z.infer<typeof AgentCommandSchema>;
 
-export const AgentCommandsSchema = z.object({ commands: z.array(AgentCommandSchema) });
+/**
+ * A target somebody is watching live. Collectors probe it at `interval_sec`
+ * until `ttl_sec` elapses — a TTL rather than a timestamp so agent and server
+ * clocks never need to agree.
+ */
+export const LiveWatchSchema = z.object({
+  target_id: z.number().int(),
+  interval_sec: z.number().int().min(1).max(3600),
+  ttl_sec: z.number().int().min(1),
+});
+export type LiveWatch = z.infer<typeof LiveWatchSchema>;
+
+export const AgentCommandsSchema = z.object({
+  commands: z.array(AgentCommandSchema),
+  live: z.array(LiveWatchSchema).default([]),
+});
 export type AgentCommands = z.infer<typeof AgentCommandsSchema>;
+
+/** Bounds for the live probe rate the UI may request. */
+export const LIVE_INTERVAL_MIN_SEC = 5;
+export const LIVE_INTERVAL_MAX_SEC = 60;
+/** How long a watch survives without the UI renewing it. */
+export const LIVE_WATCH_TTL_SEC = 30;
 
 export const SettingsSchema = z.object({
   discord_webhook_url: z.string().url().nullable(),

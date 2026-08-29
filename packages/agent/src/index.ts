@@ -55,12 +55,15 @@ async function flushLoop(): Promise<void> {
 // ── Per-target runner ──
 class TargetRunner {
   private stopped = false;
+  /** Faster cadence while somebody watches this probe live, with its deadline. */
+  private live: { intervalSec: number; until: number } | null = null;
+
   constructor(public target: AgentTarget) {}
 
   start(): void {
-    void this.loop(this.target.interval_sec, probeLimiter, () => this.probe());
+    void this.loop(() => this.probeIntervalSec(), probeLimiter, () => this.probe());
     if (this.target.traceroute_enabled) {
-      void this.loop(this.target.traceroute_interval_sec, traceLimiter, () => this.trace());
+      void this.loop(() => this.target.traceroute_interval_sec, traceLimiter, () => this.trace());
     }
   }
 
@@ -68,17 +71,45 @@ class TargetRunner {
     this.stopped = true;
   }
 
+  /** Apply (or clear) the live override. Never slows a probe down. */
+  setLive(watch: { intervalSec: number; ttlSec: number } | null): void {
+    if (!watch || watch.intervalSec >= this.target.interval_sec) {
+      this.live = null;
+      return;
+    }
+    this.live = { intervalSec: watch.intervalSec, until: Date.now() + watch.ttlSec * 1000 };
+  }
+
+  private probeIntervalSec(): number {
+    if (this.live && this.live.until > Date.now()) return this.live.intervalSec;
+    this.live = null;
+    return this.target.interval_sec;
+  }
+
   /**
    * Fixed-cadence scheduler: ticks are absolute so a slow cycle doesn't push
    * every later one back, and the first tick is jittered so N targets don't all
-   * fire in the same instant after a config reload.
+   * fire in the same instant after a config reload. The interval is read afresh
+   * each pass — going live must not wait out a minute-long sleep — and the
+   * pending tick is rescheduled from the last run whenever it changes.
    */
-  private async loop(intervalSec: number, limiter: Limiter, run: () => Promise<void>): Promise<void> {
-    const period = intervalSec * 1000;
-    let next = Date.now() + Math.random() * Math.min(period, 10_000);
+  private async loop(intervalSec: () => number, limiter: Limiter, run: () => Promise<void>): Promise<void> {
+    let period = intervalSec() * 1000;
+    let lastRun = Date.now();
+    let next = lastRun + Math.random() * Math.min(period, 10_000);
+
     while (!this.stopped) {
-      await sleep(Math.max(0, next - Date.now()));
+      const current = intervalSec() * 1000;
+      if (current !== period) {
+        period = current;
+        next = Math.max(Date.now(), lastRun + period);
+      }
+      // Wake at least once a second so a cadence change lands promptly.
+      await sleep(Math.min(Math.max(0, next - Date.now()), 1000));
       if (this.stopped) return;
+      if (Date.now() < next) continue;
+
+      lastRun = Date.now();
       await limiter.run(run);
       next += period;
       // Fell far behind (suspended laptop, overloaded host): resync instead of
@@ -155,11 +186,18 @@ function reconcile(targets: AgentTarget[]): void {
 async function commandLoop(): Promise<void> {
   for (;;) {
     try {
-      for (const cmd of await client.fetchCommands()) {
+      const { commands, live } = await client.fetchCommands();
+      for (const cmd of commands) {
         const runner = runners.get(cmd.target_id);
         if (!runner) continue;
         console.log(`! traceroute now for target ${cmd.target_id}`);
         void runner.traceNow();
+      }
+      // The list is authoritative: a target that dropped off it stops racing.
+      const watched = new Map(live.map((w) => [w.target_id, w]));
+      for (const [id, runner] of runners) {
+        const w = watched.get(id);
+        runner.setLive(w ? { intervalSec: w.interval_sec, ttlSec: w.ttl_sec } : null);
       }
     } catch (err) {
       console.warn(`[commands] ${(err as Error).message}`);

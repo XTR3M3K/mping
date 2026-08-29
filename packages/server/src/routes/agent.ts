@@ -116,7 +116,17 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
        RETURNING id, kind, target_id`,
       [collector.id],
     );
-    return { commands: rows };
+
+    // Live watches are per target, not per collector: everyone probing a
+    // watched target speeds up, so a multi-collector view stays in step.
+    const { rows: live } = await query<{ target_id: number; interval_sec: number; ttl_sec: number }>(
+      // One statement, not two: pg switches to the multi-result protocol for a
+      // semicolon-separated batch, which would hand back an array, not rows.
+      `WITH expired AS (DELETE FROM live_watches WHERE until <= now() RETURNING target_id)
+       SELECT target_id, interval_sec, ceil(extract(epoch FROM until - now()))::int AS ttl_sec
+       FROM live_watches WHERE until > now()`,
+    );
+    return { commands: rows, live };
   });
 
   // Push a batch of samples. Samples for targets that no longer exist are

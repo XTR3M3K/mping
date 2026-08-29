@@ -1,5 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { TargetCreateSchema, TargetUpdateSchema, defaultPort } from "@mping/shared";
+import {
+  LIVE_INTERVAL_MAX_SEC,
+  LIVE_INTERVAL_MIN_SEC,
+  LIVE_WATCH_TTL_SEC,
+  TargetCreateSchema,
+  TargetUpdateSchema,
+  clamp,
+  defaultPort,
+} from "@mping/shared";
 import { query } from "../db.js";
 import { getTargetById, listTargets, mapTarget, type TargetRow } from "../repo.js";
 import { schedulePurge } from "../purge.js";
@@ -90,6 +98,32 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
     );
     if (!rows[0]) return reply.code(404).send({ error: "not found" });
     return mapTarget(rows[0]);
+  });
+
+  /**
+   * Renew a live watch: while a browser holds this open, collectors probe the
+   * target every `interval_sec` instead of its configured cadence. The row
+   * expires on its own, so closing the tab (or the browser) ends live mode.
+   */
+  app.post("/api/targets/:id/live", async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: "invalid id" });
+    const body = (req.body ?? {}) as { interval_sec?: number };
+    const requested = Number(body.interval_sec ?? LIVE_INTERVAL_MIN_SEC);
+    const interval = clamp(
+      Number.isFinite(requested) ? Math.round(requested) : LIVE_INTERVAL_MIN_SEC,
+      LIVE_INTERVAL_MIN_SEC,
+      LIVE_INTERVAL_MAX_SEC,
+    );
+    const { rowCount } = await query(
+      `INSERT INTO live_watches (target_id, interval_sec, until)
+       SELECT id, $2, now() + ($3 || ' seconds')::interval FROM targets WHERE id = $1
+       ON CONFLICT (target_id) DO UPDATE
+         SET interval_sec = EXCLUDED.interval_sec, until = EXCLUDED.until`,
+      [id, interval, String(LIVE_WATCH_TTL_SEC)],
+    );
+    if (!rowCount) return reply.code(404).send({ error: "not found" });
+    return { interval_sec: interval, ttl_sec: LIVE_WATCH_TTL_SEC };
   });
 
   app.delete("/api/targets/:id", async (req, reply) => {

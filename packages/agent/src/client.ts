@@ -1,7 +1,7 @@
 import {
   AgentCommandsSchema,
   AgentConfigSchema,
-  type AgentCommand,
+  type AgentCommands,
   type AgentConfig,
   type Route,
   type Sample,
@@ -48,11 +48,11 @@ export class ServerClient {
     return AgentConfigSchema.parse(await res.json());
   }
 
-  /** Claim any one-shot instructions the server has queued for us. */
-  async fetchCommands(): Promise<AgentCommand[]> {
+  /** Claim queued instructions and learn which targets are being watched live. */
+  async fetchCommands(): Promise<AgentCommands> {
     const res = await fetch(`${this.cfg.server}/api/agent/commands`, { headers: this.headers() });
     if (!res.ok) throw new HttpError(res.status, `command fetch failed: ${res.status}`);
-    return AgentCommandsSchema.parse(await res.json()).commands;
+    return AgentCommandsSchema.parse(await res.json());
   }
 
   async pushSamples(samples: Sample[]): Promise<void> {
