@@ -26,6 +26,11 @@ export function fmtRelTime(iso: string | null | undefined): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
+/** Compact day label for axis ends, e.g. "24 Jun". */
+export function fmtDay(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export function fmtClock(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: "short",
