@@ -1,5 +1,5 @@
 import { BAND_PERCENTILES } from "./sample.js";
-import type { Route } from "./traceroute.js";
+import type { Hop, Route } from "./traceroute.js";
 
 /** Linear-interpolated percentile of a sorted ascending array. */
 export function percentile(sorted: number[], p: number): number | null {
@@ -72,6 +72,21 @@ export function diffRoutes(prev: Route, next: Route) {
     else if (p && n && (p.ip ?? "*") !== (n.ip ?? "*")) changed.push({ ttl, from: p, to: n });
   }
   return { added, removed, changed };
+}
+
+/**
+ * Cymru returns "CLOUDFLARENET - Cloudflare, Inc."; the handle in front is what
+ * fits in a table cell, with the full string left for a tooltip.
+ */
+export function shortAsName(asName: string | null | undefined): string | null {
+  return asName?.split(" - ")[0]?.trim() || null;
+}
+
+/** "AS13335 CLOUDFLARENET", "AS13335", or null when the hop has no ASN. */
+export function formatAsn(hop: Pick<Hop, "asn" | "as_name">): string | null {
+  if (hop.asn == null) return null;
+  const name = shortAsName(hop.as_name);
+  return name ? `AS${hop.asn} ${name}` : `AS${hop.asn}`;
 }
 
 export function clamp(v: number, lo: number, hi: number): number {

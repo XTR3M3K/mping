@@ -1,4 +1,4 @@
-import type { AlertKind, AlertStatus, Hop } from "@mping/shared";
+import { formatAsn, type AlertKind, type AlertStatus, type Hop } from "@mping/shared";
 import { env } from "./env.js";
 
 const COLORS = {
@@ -76,6 +76,8 @@ export async function sendDiscord(
 export function formatHop(h: Hop): string {
   const where = h.ip ?? "*";
   const name = h.host && h.host !== h.ip ? ` (${h.host})` : "";
+  const asn = formatAsn(h);
+  const via = asn ? ` [${asn}]` : "";
   const rtt = h.rtt_ms != null ? ` — ${h.rtt_ms.toFixed(1)}ms` : "";
-  return `\`${String(h.ttl).padStart(2)}\` ${where}${name}${rtt}`;
+  return `\`${String(h.ttl).padStart(2)}\` ${where}${name}${via}${rtt}`;
 }

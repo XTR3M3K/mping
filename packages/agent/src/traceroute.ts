@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { promises as dns } from "node:dns";
 import type { Route } from "@mping/shared";
+import { lookupAsn } from "./asn.js";
 
 const exec = promisify(execFile);
 
@@ -31,11 +32,15 @@ async function reverseDns(ip: string): Promise<string | null> {
   return host;
 }
 
-/** Populate each responding hop's `host` with its reverse-DNS name (parallel). */
-async function resolveHostnames(route: Route): Promise<Route> {
+/** Fill in each responding hop's reverse-DNS name and origin AS (parallel). */
+async function annotate(route: Route): Promise<Route> {
   await Promise.all(
     route.map(async (h) => {
-      if (h.ip) h.host = await reverseDns(h.ip);
+      if (!h.ip) return;
+      const [host, asn] = await Promise.all([reverseDns(h.ip), lookupAsn(h.ip)]);
+      h.host = host;
+      h.asn = asn.asn;
+      h.as_name = asn.as_name;
     }),
   );
   return route;
@@ -52,7 +57,7 @@ interface MtrHub {
 /**
  * Try `mtr --json` first (per-hop loss/rtt), fall back to `traceroute`.
  * We keep numeric output (`-n`) so IPs stay stable for change detection, then
- * fill in reverse-DNS names separately for display.
+ * fill in reverse-DNS names and origin ASNs separately for display.
  */
 export async function traceOnce(host: string): Promise<Route> {
   let route: Route;
@@ -61,7 +66,7 @@ export async function traceOnce(host: string): Promise<Route> {
   } catch {
     route = await traceTraceroute(host);
   }
-  return resolveHostnames(route);
+  return annotate(route);
 }
 
 async function traceMtr(host: string): Promise<Route> {
@@ -79,6 +84,8 @@ async function traceMtr(host: string): Promise<Route> {
       ip,
       rtt_ms: ip ? (Number.isFinite(h.Last) ? h.Last : h.Avg) : null,
       loss_pct: Number.isFinite(h["Loss%"]) ? h["Loss%"] : null,
+      asn: null,
+      as_name: null,
     };
   });
 }
@@ -107,6 +114,8 @@ async function traceTraceroute(host: string): Promise<Route> {
       ip: responded ? ipMatch![1]! : null,
       rtt_ms: timeMatch ? parseFloat(timeMatch[1]!) : null,
       loss_pct: responded ? 0 : 100,
+      asn: null,
+      as_name: null,
     });
   }
   return route;
