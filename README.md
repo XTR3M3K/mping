@@ -27,6 +27,9 @@ alerts**, and **traceroute change history**.
 - **Live mode** — a per-probe view where samples land on the chart as collectors
   report them (over the WebSocket, no polling) and the path below can be
   **re-traced on demand** instead of waiting out the probe's traceroute interval.
+- **CSV import** — bulk-add probes from a spreadsheet export (Settings → Probes →
+  Import CSV): `name` and `host` are required, everything else is optional, and the
+  preview shows exactly which rows are usable before anything is written.
 - **Polished, responsive, dark** — works on desktop and phone, live-updating over
   WebSocket.
 

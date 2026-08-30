@@ -4,9 +4,12 @@ import {
   LIVE_INTERVAL_MIN_SEC,
   LIVE_WATCH_TTL_SEC,
   TargetCreateSchema,
+  TargetImportSchema,
   TargetUpdateSchema,
   clamp,
   defaultPort,
+  type ImportRowResult,
+  type TargetImportResult,
 } from "@mping/shared";
 import { query } from "../db.js";
 import { getTargetById, listTargets, mapTarget, type TargetRow } from "../repo.js";
@@ -66,6 +69,58 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
       values,
     );
     return reply.code(201).send(mapTarget(rows[0]!));
+  });
+
+  /**
+   * Bulk create from a CSV import. Rows are applied one by one and reported
+   * individually: one malformed line shouldn't cost the operator the other
+   * ninety-nine, and a partial import they can see beats an opaque rollback.
+   */
+  app.post("/api/targets/import", async (req, reply) => {
+    const parsed = TargetImportSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    const { rows, mode } = parsed.data;
+
+    const results: ImportRowResult[] = [];
+    for (const [index, row] of rows.entries()) {
+      const t = { ...DEFAULTS, ...row };
+      if (t.port == null) t.port = defaultPort(t.type);
+      try {
+        const existing = await query<{ id: number }>(`SELECT id FROM targets WHERE name = $1`, [t.name]);
+        if (existing.rows[0] && mode === "skip") {
+          results.push({ index, name: t.name, status: "skipped" });
+          continue;
+        }
+        if (existing.rows[0]) {
+          const sets = COLUMNS.map((c, i) => `${c} = $${i + 1}`).join(", ");
+          await query(`UPDATE targets SET ${sets} WHERE id = $${COLUMNS.length + 1}`, [
+            ...COLUMNS.map((c) => (t as Record<string, unknown>)[c]),
+            existing.rows[0].id,
+          ]);
+          results.push({ index, name: t.name, status: "updated" });
+          continue;
+        }
+        const placeholders = COLUMNS.map((_, i) => `$${i + 1}`).join(",");
+        await query(
+          `INSERT INTO targets (${COLUMNS.join(", ")}) VALUES (${placeholders})`,
+          COLUMNS.map((c) => (t as Record<string, unknown>)[c]),
+        );
+        results.push({ index, name: t.name, status: "created" });
+      } catch (err) {
+        req.log.warn({ err }, `import row ${index} failed`);
+        results.push({ index, name: t.name, status: "failed", error: (err as Error).message });
+      }
+    }
+
+    const count = (s: ImportRowResult["status"]) => results.filter((r) => r.status === s).length;
+    const result: TargetImportResult = {
+      created: count("created"),
+      updated: count("updated"),
+      skipped: count("skipped"),
+      failed: count("failed"),
+      rows: results,
+    };
+    return result;
   });
 
   app.patch("/api/targets/:id", async (req, reply) => {

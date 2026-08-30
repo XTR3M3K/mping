@@ -6,6 +6,7 @@ import type {
   Settings,
   Target,
   TargetCreate,
+  TargetImportResult,
   TargetUpdate,
   TracerouteView,
 } from "@mping/shared";
@@ -50,6 +51,12 @@ export const api = {
   updateTarget: (id: number, body: TargetUpdate) =>
     req<Target>(`/targets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteTarget: (id: number) => req<void>(`/targets/${id}`, { method: "DELETE" }),
+  /** Bulk create from a parsed CSV; reports the outcome of every row. */
+  importTargets: (rows: TargetCreate[], mode: "skip" | "update") =>
+    req<TargetImportResult>("/targets/import", {
+      method: "POST",
+      body: JSON.stringify({ rows, mode }),
+    }),
   /** Renew a live watch so collectors probe this target faster while watched. */
   keepLive: (id: number, interval_sec: number) =>
     req<{ interval_sec: number; ttl_sec: number }>(`/targets/${id}/live`, {

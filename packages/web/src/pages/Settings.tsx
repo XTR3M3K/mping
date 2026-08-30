@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Server, Copy, RefreshCw, KeyRound, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Server, Copy, RefreshCw, KeyRound, Check, Upload } from "lucide-react";
 import type { Collector, Target } from "@mping/shared";
 import { probeLabel } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { TargetEditor } from "../components/TargetEditor.js";
+import { ImportCsv } from "../components/ImportCsv.js";
 import { Modal } from "../components/Modal.js";
 import { SectionTitle, StatusDot, Chip, Skeleton } from "../components/ui.js";
 import { fmtRelTime } from "../lib/format.js";
@@ -31,6 +32,7 @@ function ProbesSection() {
   const [editing, setEditing] = useState<Target | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Target | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const del = useMutation({
     mutationFn: (id: number) => api.deleteTarget(id),
@@ -46,7 +48,18 @@ function ProbesSection() {
 
   return (
     <section>
-      <SectionTitle right={<button className="btn-primary py-1.5" onClick={() => { setEditing(undefined); setOpen(true); }}><Plus className="h-4 w-4" /> Add</button>}>
+      <SectionTitle
+        right={
+          <div className="flex items-center gap-2">
+            <button className="btn-ghost py-1.5" onClick={() => setImporting(true)}>
+              <Upload className="h-4 w-4" /> Import CSV
+            </button>
+            <button className="btn-primary py-1.5" onClick={() => { setEditing(undefined); setOpen(true); }}>
+              <Plus className="h-4 w-4" /> Add
+            </button>
+          </div>
+        }
+      >
         Probes
       </SectionTitle>
       <div className="card divide-y divide-border/50">
@@ -83,6 +96,7 @@ function ProbesSection() {
         )}
       </div>
       <TargetEditor open={open} onClose={() => setOpen(false)} target={editing} />
+      <ImportCsv open={importing} onClose={() => setImporting(false)} />
       <ConfirmDelete
         what={pendingDelete ? `probe “${pendingDelete.name}”` : ""}
         detail="Its history is removed in the background; collectors stop probing it within a minute."

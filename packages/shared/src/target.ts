@@ -102,6 +102,32 @@ export const TargetUpdateSchema = TargetSchema.omit({ id: true, created_at: true
   });
 export type TargetUpdate = z.infer<typeof TargetUpdateSchema>;
 
+/** Bulk create from a CSV import. */
+export const TargetImportSchema = z.object({
+  rows: z.array(TargetCreateSchema).min(1).max(500),
+  /** What to do with a probe whose name already exists. */
+  mode: z.enum(["skip", "update"]).default("skip"),
+});
+export type TargetImport = z.infer<typeof TargetImportSchema>;
+
+export const ImportRowResultSchema = z.object({
+  /** Index into the submitted rows, so the UI can point at the right line. */
+  index: z.number().int(),
+  name: z.string(),
+  status: z.enum(["created", "updated", "skipped", "failed"]),
+  error: z.string().optional(),
+});
+export type ImportRowResult = z.infer<typeof ImportRowResultSchema>;
+
+export const TargetImportResultSchema = z.object({
+  created: z.number().int(),
+  updated: z.number().int(),
+  skipped: z.number().int(),
+  failed: z.number().int(),
+  rows: z.array(ImportRowResultSchema),
+});
+export type TargetImportResult = z.infer<typeof TargetImportResultSchema>;
+
 /**
  * Slim view of a target an agent needs to do its job. Probe-type fields carry
  * defaults so a freshly updated agent still works against a server that hasn't
