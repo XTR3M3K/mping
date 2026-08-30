@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Activity, Plus, Radio } from "lucide-react";
-import type { CollectorSeries, MultiSeriesResponse, Target } from "@mping/shared";
+import type { CollectorSeries, Target } from "@mping/shared";
 import { probeLabel } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { useUI } from "../state/ui.js";
@@ -10,42 +10,21 @@ import { SmokeChart } from "../components/SmokeChart.js";
 import { Chip, EmptyState, Skeleton } from "../components/ui.js";
 import { fmtMs, fmtLoss, lossColor, collectorColor } from "../lib/format.js";
 import { probeAddress } from "../lib/probe.js";
-
-/** Round the window to whole minutes so the query key is stable between renders. */
-const BUCKET_MS = 60_000;
+import { useDashboardSeries } from "../lib/useDashboardSeries.js";
 
 export function Dashboard() {
   const { rangeMs, live } = useUI();
   const { data: targets, isLoading } = useQuery({ queryKey: ["targets"], queryFn: api.listTargets });
-
-  const to = Math.ceil(Date.now() / BUCKET_MS) * BUCKET_MS;
-  const from = to - rangeMs;
-  const ids = useMemo(() => (targets ?? []).map((t) => t.id), [targets]);
-
-  // A single request for every card: one per card used to queue behind the
-  // server's connection pool once there were more than a handful of probes,
-  // which is what left cards blank and charts full of gaps.
-  const { data: series, isLoading: seriesLoading } = useQuery<MultiSeriesResponse>({
-    queryKey: ["dashboard-series", ids, from, to],
-    queryFn: () => api.multiSeries(ids, from, to),
-    enabled: ids.length > 0,
-    refetchInterval: live ? 15_000 : false,
-    // Keep the previous window on screen while the next one loads.
-    placeholderData: keepPreviousData,
-  });
-
-  const byTarget = useMemo(() => {
-    const map = new Map<number, CollectorSeries[]>();
-    for (const entry of series?.targets ?? []) map.set(entry.target_id, entry.series);
-    return map;
-  }, [series]);
+  const series = useDashboardSeries(rangeMs, live);
 
   return (
     <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted mt-0.5">Latency across all probes</p>
+          <p className="text-sm text-muted mt-0.5">
+            Latency across {targets?.length ? `${targets.length} probes` : "all probes"}
+          </p>
         </div>
         <Link to="/settings" className="btn-ghost">
           <Plus className="h-4 w-4" /> Add probe
@@ -77,10 +56,11 @@ export function Dashboard() {
             <TargetCard
               key={t.id}
               target={t}
-              series={byTarget.get(t.id) ?? []}
-              loading={seriesLoading}
-              from={from}
-              to={to}
+              series={series.seriesFor(t.id) ?? []}
+              loading={!series.isLoaded(t.id)}
+              from={series.from}
+              to={series.to}
+              cardRef={series.observe(t.id)}
             />
           ))}
         </div>
@@ -95,12 +75,15 @@ function TargetCard({
   loading,
   from,
   to,
+  cardRef,
 }: {
   target: Target;
   series: CollectorSeries[];
   loading: boolean;
   from: number;
   to: number;
+  /** Registers the card with the viewport observer that drives loading. */
+  cardRef: (el: HTMLElement | null) => void;
 }) {
   // Representative series = collector with the most points.
   const rep: CollectorSeries | undefined = useMemo(
@@ -111,6 +94,7 @@ function TargetCard({
 
   return (
     <Link
+      ref={cardRef}
       to={`/targets/${target.id}`}
       className="card p-4 hover:border-accent/40 transition-colors group flex flex-col"
     >
