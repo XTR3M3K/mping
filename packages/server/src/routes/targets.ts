@@ -14,6 +14,7 @@ import {
 import { query } from "../db.js";
 import { getTargetById, listTargets, mapTarget, type TargetRow } from "../repo.js";
 import { schedulePurge } from "../purge.js";
+import { formatZodError } from "../validation.js";
 import { requireAuth } from "./auth.js";
 
 const DEFAULTS = {
@@ -57,7 +58,7 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/targets", async (req, reply) => {
     const parsed = TargetCreateSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return reply.code(400).send({ error: formatZodError(parsed.error) });
     const t = { ...DEFAULTS, ...parsed.data };
     // http/https probes work without an explicit port; fill in the scheme default.
     if (t.port == null) t.port = defaultPort(t.type);
@@ -78,7 +79,7 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post("/api/targets/import", async (req, reply) => {
     const parsed = TargetImportSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return reply.code(400).send({ error: formatZodError(parsed.error) });
     const { rows, mode } = parsed.data;
 
     const results: ImportRowResult[] = [];
@@ -126,7 +127,7 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
   app.patch("/api/targets/:id", async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const parsed = TargetUpdateSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (!parsed.success) return reply.code(400).send({ error: formatZodError(parsed.error) });
 
     const patch = { ...parsed.data } as Record<string, unknown>;
     // Switching an http/https probe on without a port keeps it usable.

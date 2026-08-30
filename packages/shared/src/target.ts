@@ -102,9 +102,17 @@ export const TargetUpdateSchema = TargetSchema.omit({ id: true, created_at: true
   });
 export type TargetUpdate = z.infer<typeof TargetUpdateSchema>;
 
+/** Most rows one import request may carry; the UI splits bigger files. */
+export const IMPORT_MAX_ROWS = 1000;
+/**
+ * How many rows the UI sends at a time. Well under the cap so a partial last
+ * chunk is never a rejection, and small enough to keep each request quick.
+ */
+export const IMPORT_CHUNK_ROWS = 200;
+
 /** Bulk create from a CSV import. */
 export const TargetImportSchema = z.object({
-  rows: z.array(TargetCreateSchema).min(1).max(500),
+  rows: z.array(TargetCreateSchema).min(1).max(IMPORT_MAX_ROWS),
   /** What to do with a probe whose name already exists. */
   mode: z.enum(["skip", "update"]).default("skip"),
 });

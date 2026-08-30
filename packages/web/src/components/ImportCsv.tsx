@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download, FileUp, Upload } from "lucide-react";
 import { clsx } from "clsx";
-import { probeLabel, type TargetImportResult } from "@mping/shared";
+import { IMPORT_CHUNK_ROWS, probeLabel, type TargetImportResult } from "@mping/shared";
 import { api } from "../lib/api.js";
 import { CSV_TEMPLATE, csvToTargets, parseCsv, type CsvParseResult } from "../lib/csv.js";
 import { Modal } from "./Modal.js";
@@ -15,6 +15,7 @@ export function ImportCsv({ open, onClose }: { open: boolean; onClose: () => voi
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"skip" | "update">("skip");
   const [result, setResult] = useState<TargetImportResult | null>(null);
+  const [done, setDone] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed: CsvParseResult | null = useMemo(
@@ -22,8 +23,26 @@ export function ImportCsv({ open, onClose }: { open: boolean; onClose: () => voi
     [text],
   );
 
+  // Sent in chunks: a few thousand probes would blow past both the request cap
+  // and the body limit, and this way the dialog can show progress.
   const importMut = useMutation({
-    mutationFn: () => api.importTargets(parsed!.targets, mode),
+    mutationFn: async () => {
+      const rows = parsed!.targets;
+      const total: TargetImportResult = { created: 0, updated: 0, skipped: 0, failed: 0, rows: [] };
+      setDone(0);
+      for (let i = 0; i < rows.length; i += IMPORT_CHUNK_ROWS) {
+        const chunk = rows.slice(i, i + IMPORT_CHUNK_ROWS);
+        const res = await api.importTargets(chunk, mode);
+        total.created += res.created;
+        total.updated += res.updated;
+        total.skipped += res.skipped;
+        total.failed += res.failed;
+        // Re-base the row indexes onto the whole file, not the chunk.
+        total.rows.push(...res.rows.map((r) => ({ ...r, index: r.index + i })));
+        setDone(i + chunk.length);
+      }
+      return total;
+    },
     onSuccess: (res) => {
       setResult(res);
       qc.invalidateQueries({ queryKey: ["targets"] });
@@ -33,6 +52,7 @@ export function ImportCsv({ open, onClose }: { open: boolean; onClose: () => voi
   const reset = () => {
     setText("");
     setResult(null);
+    setDone(0);
     importMut.reset();
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -69,7 +89,7 @@ export function ImportCsv({ open, onClose }: { open: boolean; onClose: () => voi
             >
               <Upload className="h-4 w-4" />
               {importMut.isPending
-                ? "Importing…"
+                ? `Importing ${done}/${parsed?.targets.length ?? 0}…`
                 : `Import ${parsed?.targets.length ?? 0} probe${parsed?.targets.length === 1 ? "" : "s"}`}
             </button>
           </>
@@ -115,7 +135,12 @@ export function ImportCsv({ open, onClose }: { open: boolean; onClose: () => voi
 
           {parsed && <Preview parsed={parsed} mode={mode} onMode={setMode} />}
 
-          {importMut.error && <p className="text-sm text-bad">{(importMut.error as Error).message}</p>}
+          {importMut.error && (
+            <p className="text-sm text-bad">
+              {(importMut.error as Error).message}
+              {done > 0 && ` — ${done} row${done === 1 ? "" : "s"} were already imported.`}
+            </p>
+          )}
         </div>
       )}
     </Modal>
